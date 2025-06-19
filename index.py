@@ -61,17 +61,21 @@ def airtable_update_status(record_id, new_status):
 # -------- SCHEDULER JOB -------- #
 def schedule_reminder(reminder_id, reminder_time, subject, message, email):
     def job():
-        send_email(subject, message, email)
-        print(f"✅ Sent reminder to {email} at {reminder_time}")
-        # Find record by ReminderID and update status
-        records = airtable_read_reminders()
-        for rec in records:
-            if rec['fields'].get('ReminderID') == reminder_id:
-                airtable_update_status(rec['id'], "Sent")
-                break
+        try:
+            print(f"Attempting to send reminder email to {email} at {datetime.now()}")
+            send_email(subject, message, email)
+            print(f"✅ Sent reminder to {email} at {datetime.now()}")
+            records = airtable_read_reminders()
+            for rec in records:
+                if rec['fields'].get('ReminderID') == reminder_id:
+                    airtable_update_status(rec['id'], "Sent")
+                    break
+        except Exception as e:
+            print(f"Error sending scheduled email: {e}")
 
     scheduler.add_job(job, 'date', run_date=reminder_time, id=reminder_id, replace_existing=True)
     airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending")
+
 
 # -------- STREAMLIT UI -------- #
 st.title("📧 Email Reminder System (Airtable Backend)")
