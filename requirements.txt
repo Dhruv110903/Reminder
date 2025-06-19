@@ -1,0 +1,6 @@
+streamlit
+apscheduler
+gspread
+pandas
+pyairtable
+python-dotenv

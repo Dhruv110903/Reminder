@@ -1,0 +1,15 @@
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS") or "dhruv.vatsa.ug21@nsut.ac.in"
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD") or "andoroid"
+
+
+next steps!
+1. use google sheets as a db
+2. have some password/ maybe otp generated to secure this
+3. set up env
+4. set up email structure for reminders
+5. automate pdf as attachment
+
+
+streamlit-reminder-sa@reminderapp-463416.iam.gserviceaccount.com
+
+Pyairtable- patcaeugTNWcUq9PJ.f8bf988d3573c623eec345fd8bbbf52f4f69a555bc44f3b820e773418e33a49a
