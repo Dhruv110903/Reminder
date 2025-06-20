@@ -40,6 +40,30 @@ def convert_to_ist(dt):
         # If timezone aware, convert to IST
         return dt.astimezone(IST)
 
+#-------- CRON JOB DEBUGGING -------- #
+def log_cron_activity(message):
+    """Log cron job activity with timestamp"""
+    timestamp = get_ist_now().strftime('%Y-%m-%d %H:%M:%S IST')
+    log_message = f"[{timestamp}] {message}"
+    print(log_message)
+    
+    # Also try to write to a simple log (if possible)
+    try:
+        # This will show in Streamlit if the page is visited
+        if 'cron_logs' not in st.session_state:
+            st.session_state.cron_logs = []
+        st.session_state.cron_logs.append(log_message)
+        # Keep only last 10 logs
+        if len(st.session_state.cron_logs) > 10:
+            st.session_state.cron_logs = st.session_state.cron_logs[-10:]
+    except:
+        pass
+
+# Log every page load
+log_cron_activity("Page loaded/accessed")
+
+
+
 # -------- EMAIL FUNCTION -------- #
 def send_email(subject, body, to):
     msg = EmailMessage()
@@ -260,10 +284,24 @@ st.markdown("""
 # -------- HANDLE CRON JOB TRIGGER -------- #
 # This will be triggered when the cron job calls the URL with ?cron_trigger=true
 query_params = st.query_params
+
+# Auto-run check if cron_trigger parameter is present
 if query_params.get('cron_trigger') == 'true':
     st.write("🤖 Cron job triggered - checking for due reminders...")
     try:
         check_and_send_due_reminders()
         st.write("✅ Cron job completed successfully")
+        # Stop here to prevent showing the full UI
+        st.stop()
     except Exception as e:
         st.write(f"❌ Cron job error: {e}")
+        st.stop()
+
+# Alternative: Auto-run check on every page load (simpler approach)
+# Uncomment the lines below if you want it to check on every page load
+st.write("🔄 Auto-checking for due reminders...")
+try:
+    check_and_send_due_reminders()
+    st.write("✅ Auto-check completed")
+except Exception as e:
+    st.write(f"❌ Auto-check error: {e}")
