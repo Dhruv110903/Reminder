@@ -1,6 +1,5 @@
 import streamlit as st
-from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import smtplib
 import ssl
@@ -17,16 +16,11 @@ load_dotenv()
 # -------- CONFIG -------- #
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-
-AIRTABLE_PERSONAL_ACCESS_TOKEN = "patcaeugTNWcUq9PJ.f8bf988d3573c623eec345fd8bbbf52f4f69a555bc44f3b820e773418e33a49a"
-AIRTABLE_BASE_ID = "app8hL7GbcrLutTp2"       # from https://airtable.com/api
-AIRTABLE_TABLE_NAME = "Reminders"
+AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv("AIRTABLE_PERSONAL_ACCESS_TOKEN")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME")
 
 table = Table(AIRTABLE_PERSONAL_ACCESS_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-
-# -------- SCHEDULER SETUP -------- #
-scheduler = BackgroundScheduler()
-scheduler.start()
 
 # -------- EMAIL FUNCTION -------- #
 def send_email(subject, body, to):
@@ -58,28 +52,60 @@ def airtable_read_reminders():
 def airtable_update_status(record_id, new_status):
     table.update(record_id, {"Status": new_status})
 
-# -------- SCHEDULER JOB -------- #
-def schedule_reminder(reminder_id, reminder_time, subject, message, email):
-    def job():
-        try:
-            print(f"Attempting to send reminder email to {email} at {datetime.now()}")
-            send_email(subject, message, email)
-            print(f"✅ Sent reminder to {email} at {datetime.now()}")
-            records = airtable_read_reminders()
-            for rec in records:
-                if rec['fields'].get('ReminderID') == reminder_id:
-                    airtable_update_status(rec['id'], "Sent")
-                    break
-        except Exception as e:
-            print(f"Error sending scheduled email: {e}")
-
-    scheduler.add_job(job, 'date', run_date=reminder_time, id=reminder_id, replace_existing=True)
-    airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending")
-
+# -------- CRON JOB FUNCTION -------- #
+def check_and_send_due_reminders():
+    """
+    This function should be called by the cron job every 10 minutes.
+    It checks for due reminders and sends them.
+    """
+    try:
+        print(f"Checking for due reminders at {datetime.now()}")
+        records = airtable_read_reminders()
+        current_time = datetime.now()
+        
+        for record in records:
+            fields = record.get('fields', {})
+            status = fields.get('Status', '')
+            
+            # Only process pending reminders
+            if status != 'Pending':
+                continue
+                
+            reminder_time_str = fields.get('ReminderTime', '')
+            if not reminder_time_str:
+                continue
+                
+            try:
+                reminder_time = datetime.fromisoformat(reminder_time_str)
+                
+                # Check if reminder is due (current time >= reminder time)
+                if current_time >= reminder_time:
+                    email = fields.get('Email', '')
+                    subject = fields.get('Subject', '')
+                    message = fields.get('Message', '')
+                    reminder_id = fields.get('ReminderID', '')
+                    
+                    print(f"Sending due reminder to {email} (ID: {reminder_id})")
+                    
+                    # Send the email
+                    send_email(subject, message, email)
+                    
+                    # Update status to Sent
+                    airtable_update_status(record['id'], "Sent")
+                    
+                    print(f"✅ Successfully sent reminder to {email}")
+                    
+            except Exception as e:
+                print(f"Error processing reminder {fields.get('ReminderID', 'unknown')}: {e}")
+                # Update status to Error
+                airtable_update_status(record['id'], "Error")
+                
+    except Exception as e:
+        print(f"Error in check_and_send_due_reminders: {e}")
 
 # -------- STREAMLIT UI -------- #
-st.title("📧 Email Reminder System (Airtable Backend)")
-st.markdown("Set a reminder and receive an email at the specified time.")
+st.title("📧 Email Reminder System (Cron Job + Airtable)")
+st.markdown("Set a reminder and receive an email when it's due (checked every 10 minutes by cron job).")
 
 with st.form("reminder_form"):
     email = st.text_input("Your Email Address")
@@ -90,10 +116,26 @@ with st.form("reminder_form"):
     submitted = st.form_submit_button("Set Reminder")
 
     if submitted:
-        reminder_time = datetime.combine(date, time)
-        reminder_id = str(uuid.uuid4())
-        schedule_reminder(reminder_id, reminder_time, subject, message, email)
-        st.success(f"Reminder set for {reminder_time.strftime('%Y-%m-%d %H:%M')}")
+        if not email or not subject or not message:
+            st.error("Please fill in all fields.")
+        else:
+            reminder_time = datetime.combine(date, time)
+            reminder_id = str(uuid.uuid4())
+            
+            # Simply store the reminder in Airtable with Pending status
+            airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending")
+            st.success(f"Reminder set for {reminder_time.strftime('%Y-%m-%d %H:%M')}. It will be sent when due.")
+
+# -------- MANUAL TRIGGER FOR TESTING -------- #
+st.markdown("---")
+st.subheader("🔧 Manual Trigger (For Testing)")
+st.markdown("*This button manually runs the cron job function to check for due reminders*")
+if st.button("Check & Send Due Reminders Now"):
+    try:
+        check_and_send_due_reminders()
+        st.success("Manual check completed. Check the console for details.")
+    except Exception as e:
+        st.error(f"Error during manual check: {e}")
 
 # -------- TEST EMAIL -------- #
 st.markdown("---")
@@ -110,6 +152,7 @@ if st.button("Send Test Email"):
             st.success(f"Test email sent to {test_email}")
         except Exception as e:
             st.error(f"Failed to send email: {e}")
+
 # -------- DISPLAY REMINDERS -------- #
 st.markdown("---")
 st.subheader("📅 Scheduled Reminders")
@@ -124,19 +167,68 @@ if records:
         try:
             reminder_time = datetime.fromisoformat(reminder_time_str)
             time_left = reminder_time - now
-            time_left_str = str(time_left).split('.')[0] if time_left.total_seconds() > 0 else "Past due"
+            if time_left.total_seconds() > 0:
+                days = time_left.days
+                hours, remainder = divmod(time_left.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                if days > 0:
+                    time_left_str = f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    time_left_str = f"{hours}h {minutes}m"
+                else:
+                    time_left_str = f"{minutes}m"
+            else:
+                time_left_str = "Due/Overdue"
         except Exception:
-            time_left_str = "Invalid or unknown"
+            time_left_str = "Invalid time"
 
         display.append({
             "Email": f.get("Email", ""),
             "Subject": f.get("Subject", ""),
-            "ReminderTime": reminder_time_str,
+            "Reminder Time": reminder_time_str.replace('T', ' ') if reminder_time_str else "",
             "Time Left": time_left_str,
             "Status": f.get("Status", "")
         })
 
+    # Sort by reminder time
+    display.sort(key=lambda x: x.get("Reminder Time", ""))
     df = pd.DataFrame(display)
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 else:
     st.info("No reminders found.")
+
+# -------- CRON JOB SETUP INSTRUCTIONS -------- #
+st.markdown("---")
+st.subheader("⚙️ Cron Job Setup Instructions")
+st.markdown("""
+**To set up the cron job on cron-job.org:**
+
+1. **Create Account**: Go to https://cron-job.org/en/ and create a free account
+
+2. **Create New Cron Job**:
+   - Click "Create cronjob"
+   - **URL**: Enter your Streamlit app URL + `?cron_trigger=true`
+   - **Title**: "Email Reminder Checker"
+   - **Schedule**: `*/10 * * * *` (every 10 minutes)
+   - **Enabled**: Check this box
+
+3. **Schedule Explanation**:
+   - `*/10 * * * *` means: every 10 minutes
+   - `*/5 * * * *` means: every 5 minutes (if you want more frequent checks)
+   - `0 * * * *` means: every hour at minute 0
+
+4. **Alternative - Manual Trigger**: Use the "Manual Trigger" button above to test the functionality
+
+5. **Monitoring**: Check the cron job logs on cron-job.org to ensure it's running properly
+""")
+
+# -------- HANDLE CRON JOB TRIGGER -------- #
+# This will be triggered when the cron job calls the URL with ?cron_trigger=true
+query_params = st.query_params
+if query_params.get('cron_trigger') == 'true':
+    st.write("🤖 Cron job triggered - checking for due reminders...")
+    try:
+        check_and_send_due_reminders()
+        st.write("✅ Cron job completed successfully")
+    except Exception as e:
+        st.write(f"❌ Cron job error: {e}")
