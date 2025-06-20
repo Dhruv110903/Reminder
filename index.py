@@ -62,8 +62,6 @@ def log_cron_activity(message):
 # Log every page load
 log_cron_activity("Page loaded/accessed")
 
-
-
 # -------- EMAIL FUNCTION -------- #
 def send_email(subject, body, to):
     msg = EmailMessage()
@@ -102,9 +100,12 @@ def check_and_send_due_reminders():
     This function should be called by the cron job every 10 minutes.
     It checks for due reminders and sends them.
     """
+    sent_count = 0
+    error_count = 0
+    
     try:
         current_time_ist = get_ist_now()
-        print(f"Checking for due reminders at {current_time_ist.strftime('%Y-%m-%d %H:%M:%S IST')}")
+        log_cron_activity(f"Checking for due reminders at {current_time_ist.strftime('%Y-%m-%d %H:%M:%S IST')}")
         records = airtable_read_reminders()
         
         for record in records:
@@ -131,7 +132,9 @@ def check_and_send_due_reminders():
                     message = fields.get('Message', '')
                     reminder_id = fields.get('ReminderID', '')
                     
-                    print(f"Sending due reminder to {email} (ID: {reminder_id}) - Due: {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}")
+                    log_message = f"Sending due reminder to {email} (ID: {reminder_id}) - Due: {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}"
+                    print(log_message)
+                    log_cron_activity(log_message)
                     
                     # Send the email
                     send_email(subject, message, email)
@@ -139,24 +142,58 @@ def check_and_send_due_reminders():
                     # Update status to Sent
                     airtable_update_status(record['id'], "Sent")
                     
-                    print(f"✅ Successfully sent reminder to {email}")
+                    success_message = f"✅ Successfully sent reminder to {email}"
+                    print(success_message)
+                    log_cron_activity(success_message)
+                    sent_count += 1
                     
             except Exception as e:
-                print(f"Error processing reminder {fields.get('ReminderID', 'unknown')}: {e}")
+                error_message = f"Error processing reminder {fields.get('ReminderID', 'unknown')}: {e}"
+                print(error_message)
+                log_cron_activity(error_message)
                 # Update status to Error
                 airtable_update_status(record['id'], "Error")
+                error_count += 1
                 
     except Exception as e:
-        print(f"Error in check_and_send_due_reminders: {e}")
+        error_message = f"Error in check_and_send_due_reminders: {e}"
+        print(error_message)
+        log_cron_activity(error_message)
+        error_count += 1
+        
+    return sent_count, error_count
+
+# -------- AUTO-CHECK ON EVERY PAGE LOAD -------- #
+# This will automatically check and send due reminders on every page refresh
+def auto_check_reminders():
+    """Auto-check reminders on page load"""
+    try:
+        with st.spinner("🔄 Checking for due reminders..."):
+            sent_count, error_count = check_and_send_due_reminders()
+        
+        if sent_count > 0:
+            st.success(f"✅ Auto-sent {sent_count} due reminder(s)")
+        elif error_count > 0:
+            st.warning(f"⚠️ {error_count} error(s) occurred while checking reminders")
+        else:
+            st.info("ℹ️ No due reminders found")
+            
+    except Exception as e:
+        st.error(f"❌ Auto-check error: {e}")
 
 # -------- STREAMLIT UI -------- #
-st.title("📧 Email Reminder System (Cron Job + Airtable)")
-st.markdown("Set a reminder and receive an email when it's due (checked every 10 minutes by cron job).")
+st.title("📧 Email Reminder System (Auto-send on Refresh)")
+st.markdown("Set a reminder and receive an email when it's due. **Reminders are automatically checked and sent on every page refresh!**")
 
 # Display current IST time
 current_ist = get_ist_now()
 st.info(f"🕒 Current IST Time: {current_ist.strftime('%Y-%m-%d %H:%M:%S')}")
 
+# -------- AUTO-CHECK RUNS HERE -------- #
+# This will run on every page load/refresh
+auto_check_reminders()
+
+# -------- REMINDER FORM -------- #
 with st.form("reminder_form"):
     email = st.text_input("Your Email Address")
     subject = st.text_input("Subject")
@@ -176,16 +213,21 @@ with st.form("reminder_form"):
             
             # Store the reminder in Airtable
             airtable_append_reminder(reminder_id, email, subject, message, reminder_time_ist, status="Pending")
-            st.success(f"Reminder set for {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}. It will be sent when due.")
+            st.success(f"Reminder set for {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}. It will be sent automatically when due.")
 
 # -------- MANUAL TRIGGER FOR TESTING -------- #
 st.markdown("---")
-st.subheader("🔧 Manual Trigger (For Testing)")
-st.markdown("*This button manually runs the cron job function to check for due reminders*")
+st.subheader("🔧 Manual Trigger (For Additional Testing)")
+st.markdown("*This button manually runs the reminder check function (though it also runs automatically on page load)*")
 if st.button("Check & Send Due Reminders Now"):
     try:
-        check_and_send_due_reminders()
-        st.success("Manual check completed. Check the console for details.")
+        sent_count, error_count = check_and_send_due_reminders()
+        if sent_count > 0:
+            st.success(f"✅ Manual check completed. Sent {sent_count} reminder(s).")
+        elif error_count > 0:
+            st.warning(f"⚠️ Manual check completed with {error_count} error(s).")
+        else:
+            st.info("ℹ️ Manual check completed. No due reminders found.")
     except Exception as e:
         st.error(f"Error during manual check: {e}")
 
@@ -256,52 +298,50 @@ if records:
 else:
     st.info("No reminders found.")
 
-# -------- CRON JOB SETUP INSTRUCTIONS -------- #
+# -------- ACTIVITY LOGS -------- #
 st.markdown("---")
-st.subheader("⚙️ Cron Job Setup Instructions")
+st.subheader("📋 Recent Activity Logs")
+if 'cron_logs' in st.session_state and st.session_state.cron_logs:
+    for log in reversed(st.session_state.cron_logs[-5:]):  # Show last 5 logs
+        st.text(log)
+else:
+    st.info("No recent activity logs")
+
+# -------- ENHANCED CRON JOB SETUP INSTRUCTIONS -------- #
+st.markdown("---")
+st.subheader("⚙️ Cron Job Setup Instructions (Optional - Auto-check already enabled)")
 st.markdown("""
-**To set up the cron job on cron-job.org:**
+**Current Status**: ✅ **Auto-check is ENABLED** - Due reminders are automatically checked and sent on every page refresh!
 
-1. **Create Account**: Go to https://cron-job.org/en/ and create a free account
+**For additional reliability, you can still set up external cron jobs:**
 
-2. **Create New Cron Job**:
-   - Click "Create cronjob"
-   - **URL**: Enter your Streamlit app URL + `?cron_trigger=true`
-   - **Title**: "Email Reminder Checker"
+**Option 1: cron-job.org (Recommended)**
+1. Go to https://cron-job.org/en/ and create a free account
+2. Create New Cron Job:
+   - **URL**: Your Streamlit app URL
+   - **Title**: "Email Reminder Auto-Refresh"
    - **Schedule**: `*/10 * * * *` (every 10 minutes)
    - **Enabled**: Check this box
 
-3. **Schedule Explanation**:
-   - `*/10 * * * *` means: every 10 minutes
-   - `*/5 * * * *` means: every 5 minutes (if you want more frequent checks)
-   - `0 * * * *` means: every hour at minute 0
+**Option 2: UptimeRobot (Alternative)**
+1. Go to https://uptimerobot.com/ and create account
+2. Add New Monitor:
+   - **Monitor Type**: HTTP(s)
+   - **URL**: Your Streamlit app URL
+   - **Monitoring Interval**: Every 5 minutes
+   
+**How it works now:**
+- ✅ **Auto-check on page load**: Every time someone visits your app, it automatically checks for due reminders
+- ✅ **External cron jobs**: Additional reliability by automatically visiting your app every few minutes
+- ✅ **Manual trigger**: Still available for immediate testing
 
-4. **Alternative - Manual Trigger**: Use the "Manual Trigger" button above to test the functionality
-
-5. **Monitoring**: Check the cron job logs on cron-job.org to ensure it's running properly
+**Benefits of this approach:**
+- No dependency on external triggers alone
+- Works even if cron jobs fail
+- Immediate checking when you visit the app
+- Multiple layers of reliability
 """)
 
-# -------- HANDLE CRON JOB TRIGGER -------- #
-# This will be triggered when the cron job calls the URL with ?cron_trigger=true
-query_params = st.query_params
-
-# Auto-run check if cron_trigger parameter is present
-if query_params.get('cron_trigger') == 'true':
-    st.write("🤖 Cron job triggered - checking for due reminders...")
-    try:
-        check_and_send_due_reminders()
-        st.write("✅ Cron job completed successfully")
-        # Stop here to prevent showing the full UI
-        st.stop()
-    except Exception as e:
-        st.write(f"❌ Cron job error: {e}")
-        st.stop()
-
-# Alternative: Auto-run check on every page load (simpler approach)
-# Uncomment the lines below if you want it to check on every page load
-st.write("🔄 Auto-checking for due reminders...")
-try:
-    check_and_send_due_reminders()
-    st.write("✅ Auto-check completed")
-except Exception as e:
-    st.write(f"❌ Auto-check error: {e}")
+# Force a small delay and refresh indicator
+if st.button("🔄 Refresh Page to Check Reminders Again"):
+    st.rerun()
