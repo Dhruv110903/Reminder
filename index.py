@@ -11,7 +11,11 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from pyairtable import Table
 from dotenv import load_dotenv
+import pytz
 load_dotenv()
+
+# -------- TIMEZONE SETUP -------- #
+IST = pytz.timezone('Asia/Kolkata')
 
 # -------- CONFIG -------- #
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
@@ -21,6 +25,10 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME")
 
 table = Table(AIRTABLE_PERSONAL_ACCESS_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
+
+def get_ist_now():
+    """Get current time in IST"""
+    return datetime.now(IST)
 
 # -------- EMAIL FUNCTION -------- #
 def send_email(subject, body, to):
@@ -37,12 +45,14 @@ def send_email(subject, body, to):
 
 # -------- AIRTABLE HELPERS -------- #
 def airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending"):
+    # Convert reminder_time to IST and store
+    reminder_time_ist = convert_to_ist(reminder_time)
     table.create({
         "ReminderID": reminder_id,
         "Email": email,
         "Subject": subject,
         "Message": message,
-        "ReminderTime": reminder_time.isoformat(),
+        "ReminderTime": reminder_time_ist.isoformat(),
         "Status": status
     })
 
@@ -59,9 +69,9 @@ def check_and_send_due_reminders():
     It checks for due reminders and sends them.
     """
     try:
-        print(f"Checking for due reminders at {datetime.now()}")
+        current_time_ist = get_ist_now()
+        print(f"Checking for due reminders at {current_time_ist.strftime('%Y-%m-%d %H:%M:%S IST')}")
         records = airtable_read_reminders()
-        current_time = datetime.now()
         
         for record in records:
             fields = record.get('fields', {})
@@ -76,16 +86,18 @@ def check_and_send_due_reminders():
                 continue
                 
             try:
-                reminder_time = datetime.fromisoformat(reminder_time_str)
+                # Parse the stored time and ensure it's in IST
+                reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
+                reminder_time_ist = convert_to_ist(reminder_time)
                 
-                # Check if reminder is due (current time >= reminder time)
-                if current_time >= reminder_time:
+                # Check if reminder is due (current IST time >= reminder IST time)
+                if current_time_ist >= reminder_time_ist:
                     email = fields.get('Email', '')
                     subject = fields.get('Subject', '')
                     message = fields.get('Message', '')
                     reminder_id = fields.get('ReminderID', '')
                     
-                    print(f"Sending due reminder to {email} (ID: {reminder_id})")
+                    print(f"Sending due reminder to {email} (ID: {reminder_id}) - Due: {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}")
                     
                     # Send the email
                     send_email(subject, message, email)
@@ -107,6 +119,10 @@ def check_and_send_due_reminders():
 st.title("📧 Email Reminder System (Cron Job + Airtable)")
 st.markdown("Set a reminder and receive an email when it's due (checked every 10 minutes by cron job).")
 
+# Display current IST time
+current_ist = get_ist_now()
+st.info(f"🕒 Current IST Time: {current_ist.strftime('%Y-%m-%d %H:%M:%S')}")
+
 with st.form("reminder_form"):
     email = st.text_input("Your Email Address")
     subject = st.text_input("Subject")
@@ -119,12 +135,14 @@ with st.form("reminder_form"):
         if not email or not subject or not message:
             st.error("Please fill in all fields.")
         else:
+            # Create naive datetime and treat as IST
             reminder_time = datetime.combine(date, time)
+            reminder_time_ist = IST.localize(reminder_time)  # Treat input as IST
             reminder_id = str(uuid.uuid4())
             
-            # Simply store the reminder in Airtable with Pending status
-            airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending")
-            st.success(f"Reminder set for {reminder_time.strftime('%Y-%m-%d %H:%M')}. It will be sent when due.")
+            # Store the reminder in Airtable
+            airtable_append_reminder(reminder_id, email, subject, message, reminder_time_ist, status="Pending")
+            st.success(f"Reminder set for {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}. It will be sent when due.")
 
 # -------- MANUAL TRIGGER FOR TESTING -------- #
 st.markdown("---")
@@ -159,14 +177,17 @@ st.subheader("📅 Scheduled Reminders")
 
 records = airtable_read_reminders()
 if records:
-    now = datetime.now()
+    now_ist = get_ist_now()
     display = []
     for r in records:
         f = r.get("fields", {})
         reminder_time_str = f.get("ReminderTime", "")
         try:
-            reminder_time = datetime.fromisoformat(reminder_time_str)
-            time_left = reminder_time - now
+            # Parse stored time and convert to IST
+            reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
+            reminder_time_ist = convert_to_ist(reminder_time)
+            
+            time_left = reminder_time_ist - now_ist
             if time_left.total_seconds() > 0:
                 days = time_left.days
                 hours, remainder = divmod(time_left.seconds, 3600)
@@ -179,13 +200,17 @@ if records:
                     time_left_str = f"{minutes}m"
             else:
                 time_left_str = "Due/Overdue"
-        except Exception:
+                
+            # Format display time in IST
+            display_time = reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')
+        except Exception as e:
             time_left_str = "Invalid time"
+            display_time = reminder_time_str
 
         display.append({
             "Email": f.get("Email", ""),
             "Subject": f.get("Subject", ""),
-            "Reminder Time": reminder_time_str.replace('T', ' ') if reminder_time_str else "",
+            "Reminder Time": display_time,
             "Time Left": time_left_str,
             "Status": f.get("Status", "")
         })
