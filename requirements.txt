@@ -1,6 +1,7 @@
 streamlit
-apscheduler
-gspread
 pandas
 pyairtable
 python-dotenv
+gspread
+google-auth
+pytz
