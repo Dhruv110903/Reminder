@@ -472,6 +472,11 @@ def database_page():
 
 def authenticate_gmail():
     creds = None
+    if not os.path.exists('token.json'):
+        token_data = os.environ.get('GMAIL_TOKEN')
+    if token_data:
+        with open('token.json', 'w') as f:
+            f.write(token_data)
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     else:
