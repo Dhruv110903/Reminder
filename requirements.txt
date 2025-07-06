@@ -3,7 +3,6 @@ pyairtable
 python-dotenv
 pandas
 pytz
-smtplib
 email-validator
 google-auth
 google-auth-oauthlib
