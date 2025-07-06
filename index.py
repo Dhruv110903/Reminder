@@ -19,7 +19,6 @@ from googleapiclient.discovery import build
 from bs4 import BeautifulSoup
 import base64
 import re
-import datetime
 
 load_dotenv()
 
