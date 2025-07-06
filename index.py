@@ -1,183 +1,3 @@
-# import streamlit as st
-# from datetime import datetime
-# import uuid
-# import pandas as pd
-# from pyairtable import Api
-# from dotenv import load_dotenv
-# import pytz
-# import os
-
-# load_dotenv()
-
-# # -------- TIMEZONE SETUP -------- #
-# IST = pytz.timezone('Asia/Kolkata')
-
-# # -------- CONFIG -------- #
-# AIRTABLE_PERSONAL_ACCESS_TOKEN = os.getenv("AIRTABLE_PERSONAL_ACCESS_TOKEN")
-# AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-# AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME")
-
-# # -------- AUTHENTICATION CONFIG -------- #
-# AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")  # Default username
-# AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "password123")  # Default password
-
-# # -------- AUTHENTICATION FUNCTION -------- #
-# def check_authentication():
-#     """Simple authentication system"""
-#     if 'authenticated' not in st.session_state:
-#         st.session_state.authenticated = False
-    
-#     if not st.session_state.authenticated:
-#         st.title("🔐 Login Required")
-#         st.markdown("Please enter your credentials to access the Email Reminder System.")
-#         st.markdown("Username- admin, password= admin")
-        
-#         with st.form("login_form"):
-#             username = st.text_input("Username")
-#             password = st.text_input("Password", type="password")
-#             login_submitted = st.form_submit_button("Login")
-            
-#             if login_submitted:
-#                 if username == AUTH_USERNAME and password == AUTH_PASSWORD:
-#                     st.session_state.authenticated = True
-#                     st.success("✅ Login successful!")
-#                     st.rerun()
-#                 else:
-#                     st.error("❌ Invalid credentials. Please try again.")
-        
-#         return False
-    
-#     return True
-
-# def logout():
-#     """Logout function"""
-#     st.session_state.authenticated = False
-#     st.rerun()
-
-# table = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN).table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-
-# def get_ist_now():
-#     """Get current time in IST"""
-#     return datetime.now(IST)
-
-# def convert_to_ist(dt):
-#     """Convert datetime to IST timezone"""
-#     if dt.tzinfo is None:
-#         return IST.localize(dt)
-#     else:
-#         return dt.astimezone(IST)
-
-# # -------- AIRTABLE HELPERS -------- #
-# def airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending"):
-#     reminder_time_ist = convert_to_ist(reminder_time)
-#     table.create({
-#         "ReminderID": reminder_id,
-#         "Email": email,
-#         "Subject": subject,
-#         "Message": message,
-#         "ReminderTime": reminder_time_ist.isoformat(),
-#         "Status": status
-#     })
-
-# def airtable_read_reminders():
-#     return table.all()
-
-# # -------- STREAMLIT UI -------- #
-# # Check authentication first
-# if not check_authentication():
-#     st.stop()
-
-# # Configure sidebar to be collapsed by default
-# st.set_page_config(initial_sidebar_state="collapsed")
-
-# # Add logout button in sidebar
-# with st.sidebar:
-#     st.markdown("---")
-#     if st.button("🚪 Logout"):
-#         logout()
-
-# st.title("📧 Reminder system")
-# st.markdown("Set a reminder and receive an email when it's due.")
-
-# # # Display current IST time
-# # current_ist = get_ist_now()
-# # st.info(f"🕒 Current IST Time: {current_ist.strftime('%Y-%m-%d %H:%M:%S')}")
-
-# # -------- REMINDER FORM -------- #
-# with st.form("reminder_form"):
-#     email = st.text_input("Your Email Address")
-#     subject = st.text_input("Subject")
-#     message = st.text_area("Reminder Message")
-#     date = st.date_input("Date")
-#     time = st.time_input("Time")
-#     submitted = st.form_submit_button("Set Reminder")
-
-#     if submitted:
-#         if not email or not subject or not message:
-#             st.error("Please fill in all fields.")
-#         else:
-#             # Create naive datetime and treat as IST
-#             reminder_time = datetime.combine(date, time)
-#             reminder_time_ist = IST.localize(reminder_time)
-#             reminder_id = str(uuid.uuid4())
-            
-#             # Store the reminder in Airtable
-#             airtable_append_reminder(reminder_id, email, subject, message, reminder_time_ist, status="Pending")
-#             st.success(f"Reminder set for {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}. It will be sent automatically when due.")
-
-# # -------- DISPLAY REMINDERS -------- #
-# st.markdown("---")
-# st.subheader("📅 Scheduled Reminders")
-
-# records = airtable_read_reminders()
-# if records:
-#     now_ist = get_ist_now()
-#     display = []
-#     for r in records:
-#         f = r.get("fields", {})
-#         reminder_time_str = f.get("ReminderTime", "")
-#         try:
-#             # Parse stored time and convert to IST
-#             reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
-#             reminder_time_ist = convert_to_ist(reminder_time)
-            
-#             time_left = reminder_time_ist - now_ist
-#             if time_left.total_seconds() > 0:
-#                 days = time_left.days
-#                 hours, remainder = divmod(time_left.seconds, 3600)
-#                 minutes, _ = divmod(remainder, 60)
-#                 if days > 0:
-#                     time_left_str = f"{days}d {hours}h {minutes}m"
-#                 elif hours > 0:
-#                     time_left_str = f"{hours}h {minutes}m"
-#                 else:
-#                     time_left_str = f"{minutes}m"
-#             else:
-#                 time_left_str = "Due/Overdue"
-                
-#             # Format display time in IST
-#             display_time = reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')
-#         except Exception as e:
-#             time_left_str = "Invalid time"
-#             display_time = reminder_time_str
-
-#         display.append({
-#             "Email": f.get("Email", ""),
-#             "Subject": f.get("Subject", ""),
-#             "Reminder Time": display_time,
-#             "Time Left": time_left_str,
-#             "Status": f.get("Status", "")
-#         })
-
-#     # Sort by reminder time
-#     display.sort(key=lambda x: x.get("Reminder Time", ""))
-#     df = pd.DataFrame(display)
-#     st.dataframe(df, use_container_width=True)
-# else:
-#     st.info("No reminders found.")
-
-
-
 import streamlit as st
 from datetime import datetime, timedelta
 import uuid
@@ -192,6 +12,14 @@ import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import io
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from bs4 import BeautifulSoup
+import base64
+import re
+import datetime
 
 load_dotenv()
 
@@ -213,6 +41,10 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+
+# -------- GOOGLE API CONFIG -------- #
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+SUBJECT_FILTER = "ISIN Activated"
 
 # -------- EMAIL FUNCTIONS -------- #
 def generate_otp():
@@ -452,181 +284,443 @@ def convert_to_ist(dt):
         return dt.astimezone(IST)
 
 # -------- AIRTABLE HELPERS -------- #
-def airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending"):
-    reminder_time_ist = convert_to_ist(reminder_time)
-    table.create({
-        "ReminderID": reminder_id,
-        "Email": email,
-        "Subject": subject,
-        "Message": message,
-        "ReminderTime": reminder_time_ist.isoformat(),
-        "Status": status
-    })
+# def airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending"):
+#     reminder_time_ist = convert_to_ist(reminder_time)
+#     table.create({
+#         "ReminderID": reminder_id,
+#         "Email": email,
+#         "Subject": subject,
+#         "Message": message,
+#         "ReminderTime": reminder_time_ist.isoformat(),
+#         "Status": status
+#     })
 
-def airtable_read_reminders():
-    return table.all()
-
-def get_reminders_analytics():
-    """Get analytics for reminders"""
-    records = airtable_read_reminders()
-    now_ist = get_ist_now()
-    
-    analytics = {
-        "1_week": [],
-        "1_month": [],
-        "3_months": [],
-        "6_months": [],
-        "6_months_plus": []
-    }
-    
-    for r in records:
+def airtable_read_records():
+    airtable_records = table.all()
+    records = []
+    for r in airtable_records:
         f = r.get("fields", {})
-        reminder_time_str = f.get("ReminderTime", "")
-        try:
-            reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
-            reminder_time_ist = convert_to_ist(reminder_time)
-            
-            time_diff = reminder_time_ist - now_ist
-            days_diff = time_diff.days
-            
-            reminder_data = {
-                "email": f.get("Email", ""),
-                "subject": f.get("Subject", ""),
-                "reminder_time": reminder_time_ist,
-                "status": f.get("Status", "")
-            }
-            
-            if days_diff <= 7:
-                analytics["1_week"].append(reminder_data)
-            elif days_diff <= 30:
-                analytics["1_month"].append(reminder_data)
-            elif days_diff <= 90:
-                analytics["3_months"].append(reminder_data)
-            elif days_diff <= 180:
-                analytics["6_months"].append(reminder_data)
-            else:
-                analytics["6_months_plus"].append(reminder_data)
-        except:
-            continue
+        record = {
+            "ARN No": f.get("ARN No", ""),
+            "ISIN": f.get("ISIN", ""),
+            "Security Type": f.get("Security Type", ""),
+            "Company Name": f.get("Company Name", ""),
+            "ISIN Allotment Date": f.get("ISIN Allotment Date", ""),
+            "Company reffered By": f.get("Company reffered By", ""),
+            "Email ID": f.get("Email ID", ""),
+            "COMPANY SPOC": f.get("COMPANY SPOC", ""),
+            "GSTIN": f.get("GSTIN", ""),
+            "ADDRESS": f.get("ADDRESS", ""),
+            "Bill Amount": f.get("Bill Amount", ""),
+            "BILL Date 1": f.get("BILL Date 1", ""),
+            "BILL Date 2": f.get("BILL Date 2", ""),
+            "BILL Date 3": f.get("BILL Date 3", ""),
+            "BILL Date 4": f.get("BILL Date 4", ""),
+            "BILL Date 5": f.get("BILL Date 5", ""),
+            "BILL Date 6": f.get("BILL Date 6", ""),
+            "BILL Date 7": f.get("BILL Date 7", ""),
+            "LINK": f.get("LINK", ""),
+            "Company Path": f.get("Company Path", "")
+        }
+        records.append(record)
+    return records
+
+# def get_reminders_analytics():
+#     """Get analytics for reminders"""
+#     records = airtable_read_reminders()
+#     now_ist = get_ist_now()
     
-    return analytics
+#     analytics = {
+#         "1_week": [],
+#         "1_month": [],
+#         "3_months": [],
+#         "6_months": [],
+#         "6_months_plus": []
+#     }
+    
+#     for r in records:
+#         f = r.get("fields", {})
+#         reminder_time_str = f.get("ReminderTime", "")
+#         try:
+#             reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
+#             reminder_time_ist = convert_to_ist(reminder_time)
+            
+#             time_diff = reminder_time_ist - now_ist
+#             days_diff = time_diff.days
+            
+#             reminder_data = {
+#                 "email": f.get("Email", ""),
+#                 "subject": f.get("Subject", ""),
+#                 "reminder_time": reminder_time_ist,
+#                 "status": f.get("Status", "")
+#             }
+            
+#             if days_diff <= 7:
+#                 analytics["1_week"].append(reminder_data)
+#             elif days_diff <= 30:
+#                 analytics["1_month"].append(reminder_data)
+#             elif days_diff <= 90:
+#                 analytics["3_months"].append(reminder_data)
+#             elif days_diff <= 180:
+#                 analytics["6_months"].append(reminder_data)
+#             else:
+#                 analytics["6_months_plus"].append(reminder_data)
+#         except:
+#             continue
+    
+#     return analytics
 
 # -------- PAGES -------- #
-def home_page():
-    """Home page with reminder creation"""
-    st.title("📧 Reminder System")
-    st.markdown("Set a reminder and receive an email when it's due.")
-
-    # Show current time
+def home_page(gmail_data=None):
+    st.title("📧 Company & Bills Database Entry")
+    st.markdown("Add a new company & bill record to the database.")
     current_ist = get_ist_now()
     st.caption(f"🕒 Current IST Time: {current_ist.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # -------- REMINDER FORM -------- #
-    with st.form("reminder_form"):
-        st.subheader("📝 Create New Reminder")
-        
+    selected_entry = None
+    if gmail_data:
+        st.subheader("📥 Use Gmail Extracted Data")
+        options = [f"{d['Company']} | {d['ISIN']} | {d['Instrument']}" for d in gmail_data]
+        selected = st.selectbox("Select Extracted Entry", ["--- Select ---"] + options)
+
+        if selected != "--- Select ---":
+            selected_entry = next(d for d in gmail_data if f"{d['Company']} | {d['ISIN']} | {d['Instrument']}" == selected)
+
+    # Pre-fill fields if selected_entry exists
+    with st.form("record_form"):
+        st.subheader("📝 New Record Details")
+
         col1, col2 = st.columns(2)
         with col1:
-            email = st.text_input("Your Email Address", placeholder="example@gmail.com")
-            subject = st.text_input("Subject", placeholder="Meeting reminder")
-        
+            arn_no = st.text_input("ARN No")
+            isin = st.text_input("ISIN", value=selected_entry["ISIN"] if selected_entry else "")
+            security_type = st.text_input("Security Type", value=selected_entry["Instrument"] if selected_entry else "")
+            company_name = st.text_input("Company Name", value=selected_entry["Company"] if selected_entry else "")
+            isin_allotment_date = st.date_input("ISIN Allotment Date", value=datetime.now().date())
+            company_referred_by = st.text_input("Company Referred By")
+            email_id = st.text_input("Email ID")
+            company_spoc = st.text_input("COMPANY SPOC")
+            gstin = st.text_input("GSTIN")
+
         with col2:
-            date = st.date_input("Date", min_value=datetime.now().date())
-            time = st.time_input("Time")
-        
-        message = st.text_area("Reminder Message", placeholder="Don't forget about the team meeting...")
-        
-        submitted = st.form_submit_button("🔔 Set Reminder", type="primary")
+            address = st.text_area("ADDRESS", height=150)
+            bill_amount = st.number_input("Bill Amount", min_value=0.0, step=0.01, format="%.2f")
+            bill_date_1 = st.date_input("BILL Date 1", value=datetime.now().date())
+            bill_date_2 = st.date_input("BILL Date 2", value=datetime.now().date())
+            bill_date_3 = st.date_input("BILL Date 3", value=datetime.now().date())
+            bill_date_4 = st.date_input("BILL Date 4", value=datetime.now().date())
+            bill_date_5 = st.date_input("BILL Date 5", value=datetime.now().date())
+            bill_date_6 = st.date_input("BILL Date 6", value=datetime.now().date())
+            bill_date_7 = st.date_input("BILL Date 7", value=datetime.now().date())
+            link = st.text_input("LINK")
+            company_path = st.text_input("Company Path")
+
+        submitted = st.form_submit_button("➕ Add Record")
 
         if submitted:
-            if not email or not subject or not message:
-                st.error("Please fill in all fields.")
+            if not arn_no or not company_name:
+                st.error("Please fill at least ARN No. and Company Name.")
             else:
-                # Create naive datetime and treat as IST
-                reminder_time = datetime.combine(date, time)
-                reminder_time_ist = IST.localize(reminder_time)
-                reminder_id = str(uuid.uuid4())
-                
-                # Store the reminder in Airtable
-                airtable_append_reminder(reminder_id, email, subject, message, reminder_time_ist, status="Pending")
-                st.success(f"✅ Reminder set for {reminder_time_ist.strftime('%Y-%m-%d %H:%M IST')}. It will be sent automatically when due.")
+                record = {
+                    "ARN No": arn_no,
+                    "ISIN": isin,
+                    "Security Type": security_type,
+                    "Company Name": company_name,
+                    "ISIN Allotment Date": isin_allotment_date.strftime("%Y-%m-%d"),
+                    "Company reffered By": company_referred_by,
+                    "Email ID": email_id,
+                    "COMPANY SPOC": company_spoc,
+                    "GSTIN": gstin,
+                    "ADDRESS": address,
+                    "Bill Amount": bill_amount,
+                    "BILL Date 1": bill_date_1.strftime("%Y-%m-%d"),
+                    "BILL Date 2": bill_date_2.strftime("%Y-%m-%d"),
+                    "BILL Date 3": bill_date_3.strftime("%Y-%m-%d"),
+                    "BILL Date 4": bill_date_4.strftime("%Y-%m-%d"),
+                    "BILL Date 5": bill_date_5.strftime("%Y-%m-%d"),
+                    "BILL Date 6": bill_date_6.strftime("%Y-%m-%d"),
+                    "BILL Date 7": bill_date_7.strftime("%Y-%m-%d"),
+                    "LINK": link,
+                    "Company Path": company_path
+                }
+                try:
+                    table.create(record)
+                    st.success(f"✅ Record for {company_name} added successfully!")
+                except Exception as e:
+                    st.error(f"Failed to add record: {e}")
 
 def database_page():
-    """Database page with analytics and data management"""
-    st.title("📊 Database")
+    st.title("📊 Company & Bills Database")
+    records = airtable_read_records()
     
-    # Get analytics
-    analytics = get_reminders_analytics()
-    
-    # Analytics cards
-    st.subheader("📈 Overview")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Due in 1 Week", len(analytics["1_week"]))
-        st.metric("Due in 1 Month", len(analytics["1_month"]))
-    
-    with col2:
-        st.metric("Due in 3 Months", len(analytics["3_months"]))
-        st.metric("Due in 6 Months", len(analytics["6_months"]))
-    
-    with col3:
-        st.metric("Due in 6+ Months", len(analytics["6_months_plus"]))
-    
-    # Full database view
-    st.markdown("---")
-    st.subheader("🗃️ Complete Database")
-    
-    # Display all data
-    records = airtable_read_reminders()
     if records:
-        now_ist = get_ist_now()
-        display = []
+        df = pd.DataFrame(records)
         
-        for r in records:
-            f = r.get("fields", {})
-            
-            reminder_time_str = f.get("ReminderTime", "")
-            try:
-                reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
-                reminder_time_ist = convert_to_ist(reminder_time)
-                
-                time_left = reminder_time_ist - now_ist
-                if time_left.total_seconds() > 0:
-                    days = time_left.days
-                    hours, remainder = divmod(time_left.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
-                    if days > 0:
-                        time_left_str = f"{days}d {hours}h {minutes}m"
-                    elif hours > 0:
-                        time_left_str = f"{hours}h {minutes}m"
-                    else:
-                        time_left_str = f"{minutes}m"
-                else:
-                    time_left_str = "Due/Overdue"
-                    
-                display_time = reminder_time_ist.strftime('%d %B, %Y at %I:%M %p IST')
-            except:
-                time_left_str = "Invalid time"
-                display_time = reminder_time_str
-
-            display.append({
-                "Email": f.get("Email", ""),
-                "Subject": f.get("Subject", ""),
-                "Reminder Time": display_time,
-                "Time Left": time_left_str,
-                "Status": f.get("Status", "")
-            })
-
-        if display:
-            # Sort by reminder time
-            display.sort(key=lambda x: x.get("Reminder Time", ""))
-            df = pd.DataFrame(display)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("No reminders found.")
+        # Format date columns if you want (optional)
+        date_cols = [
+            "ISIN Allotment Date",
+            "BILL Date 1", "BILL Date 2", "BILL Date 3",
+            "BILL Date 4", "BILL Date 5", "BILL Date 6", "BILL Date 7"
+        ]
+        for col in date_cols:
+            if col in df.columns:
+                # Try to parse with known format
+                df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%d-%b-%y')
+        
+        st.dataframe(df, use_container_width=True)
     else:
-        st.info("No reminders found in the database.")
+        st.info("No records found.")
+
+def authenticate_gmail():
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    else:
+        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+        creds = flow.run_local_server(port=8080)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    return build('gmail', 'v1', credentials=creds)
+
+
+def get_email_body(payload):
+    """
+    Recursively search payload parts to find plain text or html content.
+    Returns a tuple (plain_text, html_content) where either can be None.
+    """
+    plain_text = None
+    html_content = None
+
+    if 'parts' in payload:
+        for part in payload['parts']:
+            pt, ht = get_email_body(part)
+            if pt and not plain_text:
+                plain_text = pt
+            if ht and not html_content:
+                html_content = ht
+    else:
+        mime_type = payload.get('mimeType')
+        data = payload.get('body', {}).get('data')
+        if data:
+            decoded = base64.urlsafe_b64decode(data).decode(errors='replace')
+            if mime_type == 'text/plain':
+                plain_text = decoded
+            elif mime_type == 'text/html':
+                html_content = decoded
+
+    return plain_text, html_content
+
+
+def extract_isin_details_from_text(text):
+    results = []
+    for line in text.splitlines():
+        line = line.strip()
+        # Skip header or empty lines
+        if not line or 'Company' in line or 'ISIN' in line or 'Instrument' in line:
+            continue
+        
+        # Look for ISIN pattern in line
+        match = re.search(r'(INE[A-Z0-9]{9})', line)
+        if match:
+            isin = match.group(1)
+            parts = line.split()
+            isin_index = parts.index(isin)
+            company = " ".join(parts[:isin_index])
+            instrument = " ".join(parts[isin_index+1:])
+            results.append({
+                "Company": company,
+                "ISIN": isin,
+                "Instrument": instrument
+            })
+    return results
+def fetch_and_parse_emails(service, subject_filter=SUBJECT_FILTER):
+    existing_isins = {rec["ISIN"] for rec in airtable_read_records() if rec.get("ISIN")}
+
+    results = service.users().messages().list(userId='me', q=f'subject:"{subject_filter}"', maxResults=30).execute()
+    messages = results.get('messages', [])
+    
+    parsed_data = []
+    email_metadata = []
+
+    for msg in messages:
+        msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+        headers = msg_data['payload']['headers']
+
+        subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '')
+        sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), '')
+        to = next((h['value'] for h in headers if h['name'].lower() == 'to'), '')
+
+        payload = msg_data['payload']
+        plain_text, html_content = get_email_body(payload)
+
+        # # ✅ DEBUG: Show subject
+        # st.write(f"📧 Email Subject: {subject}")
+
+        text_to_parse = plain_text or BeautifulSoup(html_content, "html.parser").get_text(separator="\n") if html_content else None
+
+        # # ✅ DEBUG: Show email body snippet
+        # st.write(f"📄 Body (first 300 chars): {text_to_parse[:300] if text_to_parse else 'No content'}")
+
+        if text_to_parse:
+            extracted = extract_isin_details_from_text(text_to_parse)
+            # st.write(f"🧪 Extracted ISINs: {extracted}")  # DEBUG: What was extracted?
+
+            for entry in extracted:
+                if entry["ISIN"] not in existing_isins:
+                    parsed_data.append(entry)
+                    email_metadata.append({
+                        "Subject": subject,
+                        "From": sender,
+                        "To": to,
+                        "Company": entry["Company"]
+                    })
+            else:
+                # Optional: You can still log the email for debugging
+                email_metadata.append({
+                    "Subject": subject,
+                    "From": sender,
+                    "To": to,
+                    "Company": "❌ No ISIN Found"
+                })
+
+    return email_metadata, parsed_data
+
+
+def isin_record_exists(company_name, isin):
+    records = airtable_read_records()
+    for r in records:
+        if r.get("Company Name", "").strip().lower() == company_name.strip().lower() and \
+           r.get("ISIN", "").strip().lower() == isin.strip().lower():
+            return True
+    return False
+
+def gmail_extractor_page():
+    st.set_page_config(page_title="📧 NSDL ISIN Email Extractor", layout="wide")
+    st.title("📧 NSDL ISIN Details Extractor from Gmail")
+
+    # Don't initialize `data` here — keep it scoped
+    if st.button("Fetch NSDL Emails"):
+        try:
+            with st.spinner("Authenticating and reading Gmail..."):
+                service = authenticate_gmail()
+                email_meta, data = fetch_and_parse_emails(service)
+
+            # if email_meta:
+            #     st.subheader("📨 Last 5 Fetched Email Subjects")
+            #     st.table(pd.DataFrame(email_meta))
+
+            if data:
+                st.subheader("📋 Extracted ISIN Details")
+                st.dataframe(data)
+                st.success("ISIN Data fetched successfully! Now go to Home to use it.")
+
+                # ✅ Save to both session_state
+                st.session_state.gmail_data = data
+                st.session_state.fetched_isin_data = data
+            else:
+                st.warning("No ISIN data found in emails.")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    # ✅ This part runs if previously fetched data exists
+    if 'fetched_isin_data' in st.session_state:
+        data = st.session_state.fetched_isin_data
+        st.subheader("📋 Extracted ISIN Details")
+        st.dataframe(data)
+
+        if st.button("📥 Save All New Entries to Airtable"):
+            added = 0
+            skipped = 0
+            for entry in data:
+                company = entry["Company"]
+                isin = entry["ISIN"]
+                instrument = entry["Instrument"]
+
+                if isin_record_exists(company, isin):
+                    skipped += 1
+                    continue
+
+                record = {
+                    "ISIN": isin,
+                    "Security Type": instrument,
+                    "Company Name": company,
+                    "ISIN Allotment Date": datetime.now().strftime("%Y-%m-%d")
+                }
+
+                try:
+                    table.create(record)
+                    added += 1
+                except Exception as e:
+                    st.error(f"Error adding record for {company}: {e}")
+
+            st.success(f"✅ Added {added} new records. Skipped {skipped} existing ones.")
+
+
+def edit_page():
+    st.title("✏️ Edit Company Record by ISIN")
+
+    records = airtable_read_records()
+    isin_options = [rec["ISIN"] for rec in records if rec["ISIN"]]
+    selected_isin = st.selectbox("Select ISIN to Edit", ["--- Select ---"] + isin_options)
+
+    if selected_isin != "--- Select ---":
+        record = next((r for r in records if r["ISIN"] == selected_isin), None)
+
+        if record:
+            with st.form("edit_form"):
+                st.subheader(f"Editing Record for ISIN: `{selected_isin}`")
+                arn_no = st.text_input("ARN No", value=record.get("ARN No", ""))
+                company_name = st.text_input("Company Name", value=record.get("Company Name", ""))
+                security_type = st.text_input("Security Type", value=record.get("Security Type", ""))
+                company_referred_by = st.text_input("Company referred By", value=record.get("Company reffered By", ""))
+                email_id = st.text_input("Email ID", value=record.get("Email ID", ""))
+                company_spoc = st.text_input("COMPANY SPOC", value=record.get("COMPANY SPOC", ""))
+                gstin = st.text_input("GSTIN", value=record.get("GSTIN", ""))
+                address = st.text_area("ADDRESS", value=record.get("ADDRESS", ""))
+
+                def safe_float(val):
+                    try:
+                        return float(val)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                bill_amount = st.number_input("Bill Amount", value=safe_float(record.get("Bill Amount", 0)))
+                link = st.text_input("LINK", value=record.get("LINK", ""))
+                company_path = st.text_input("Company Path", value=record.get("Company Path", ""))
+                # Parse stored date string to date object for default value
+                try:
+                    default_bill_date = datetime.datetime.strptime(record.get("BILL Date 1", ""), "%Y-%m-%d").date()
+                except Exception:
+                    default_bill_date = datetime.date.today()
+
+                Bill_Date_1 = st.date_input("BILL Date 1", value=default_bill_date, key="bill_date_1")
+
+                submit = st.form_submit_button("✅ Update Record")
+                if submit:
+                    airtable_id = next((r["id"] for r in table.all() if r["fields"].get("ISIN") == selected_isin), None)
+                    bill_date_str = Bill_Date_1.strftime("%Y-%m-%d") if Bill_Date_1 else ""
+                    if airtable_id:
+                        updated_data = {
+                            "ARN No": arn_no,
+                            "Company Name": company_name,
+                            "Security Type": security_type,
+                            "Company reffered By": company_referred_by,
+                            "Email ID": email_id,
+                            "COMPANY SPOC": company_spoc,
+                            "GSTIN": gstin,
+                            "ADDRESS": address,
+                            "Bill Amount": bill_amount,
+                            "LINK": link,
+                            "Company Path": company_path,
+                            "BILL Date 1": bill_date_str,
+                        }
+                        table.update(airtable_id, updated_data)
+                        st.write("Updating Airtable record with data:", updated_data)  # debug
+                        st.success("Record updated successfully!")
+                    else:
+                        st.error("Failed to locate Airtable record by ISIN.")
+
+
 
 # -------- MAIN APP -------- #
 # Check authentication first
@@ -637,30 +731,44 @@ if not check_authentication():
 st.set_page_config(
     page_title="Reminder System",
     page_icon="📧",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    layout="wide"
 )
 
 # Professional sidebar navigation
 with st.sidebar:
     st.markdown("### Navigation")
-    
-    if st.button("Home", use_container_width=True):
-        st.session_state.page = "Home"
-    
+
     if st.button("Database", use_container_width=True):
         st.session_state.page = "Database"
-    
+        
+    if st.button("Home", use_container_width=True):
+        st.session_state.page = "Home"
+
+    if st.button("Gmail Extractor", use_container_width=True):
+        st.session_state.page = "Gmail"
+
+    if st.button("✏️ Edit Record", use_container_width=True):
+        st.session_state.page = "Edit"
+
+
     st.markdown("---")
     if st.button("Logout", type="primary", use_container_width=True):
         logout()
+    
+
 
 # Initialize page if not set
 if 'page' not in st.session_state:
-    st.session_state.page = "Home"
+    st.session_state.page = "Database"
 
 # Display selected page
-if st.session_state.page == "Home":
-    home_page()
-elif st.session_state.page == "Database":
+if st.session_state.page == "Database":
     database_page()
-
+elif st.session_state.page == "Home":
+    gmail_data = st.session_state.get("gmail_data", [])
+    home_page(gmail_data=gmail_data)
+elif st.session_state.page == "Gmail":
+    gmail_extractor_page()
+elif st.session_state.page == "Edit":
+    edit_page()
