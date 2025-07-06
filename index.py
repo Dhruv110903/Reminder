@@ -12,7 +12,7 @@ import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import io
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+# from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
