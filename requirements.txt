@@ -1,7 +1,12 @@
 streamlit
-pandas
 pyairtable
 python-dotenv
-gspread
-google-auth
+pandas
 pytz
+smtplib
+email-validator
+google-auth
+google-auth-oauthlib
+google-api-python-client
+beautifulsoup4
+st-aggrid
