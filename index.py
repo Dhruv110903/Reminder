@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 import base64
 import re
 
+
 load_dotenv()
 
 # -------- TIMEZONE SETUP -------- #
@@ -282,92 +283,70 @@ def convert_to_ist(dt):
     else:
         return dt.astimezone(IST)
 
+# -------- HELPER FUNCTIONS -------- #
+def safe_float(value):
+    """Safely convert value to float, return 0.0 if conversion fails"""
+    if value is None or value == "":
+        return 0.0
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
+
+def safe_date_string(date_str):
+    """Safely format date string, return empty string if invalid"""
+    if not date_str:
+        return ""
+    try:
+        # Try to parse and reformat the date
+        if isinstance(date_str, str):
+            parsed_date = pd.to_datetime(date_str, errors='coerce')
+            if pd.isna(parsed_date):
+                return ""
+            return parsed_date.strftime('%d-%b-%y')
+        return date_str
+    except:
+        return ""
+
 # -------- AIRTABLE HELPERS -------- #
-# def airtable_append_reminder(reminder_id, email, subject, message, reminder_time, status="Pending"):
-#     reminder_time_ist = convert_to_ist(reminder_time)
-#     table.create({
-#         "ReminderID": reminder_id,
-#         "Email": email,
-#         "Subject": subject,
-#         "Message": message,
-#         "ReminderTime": reminder_time_ist.isoformat(),
-#         "Status": status
-#     })
-
 def airtable_read_records():
-    airtable_records = table.all()
-    records = []
-    for r in airtable_records:
-        f = r.get("fields", {})
-        record = {
-            "ARN No": f.get("ARN No", ""),
-            "ISIN": f.get("ISIN", ""),
-            "Security Type": f.get("Security Type", ""),
-            "Company Name": f.get("Company Name", ""),
-            "ISIN Allotment Date": f.get("ISIN Allotment Date", ""),
-            "Company reffered By": f.get("Company reffered By", ""),
-            "Email ID": f.get("Email ID", ""),
-            "COMPANY SPOC": f.get("COMPANY SPOC", ""),
-            "GSTIN": f.get("GSTIN", ""),
-            "ADDRESS": f.get("ADDRESS", ""),
-            "Bill Amount": f.get("Bill Amount", ""),
-            "BILL Date 1": f.get("BILL Date 1", ""),
-            "BILL Date 2": f.get("BILL Date 2", ""),
-            "BILL Date 3": f.get("BILL Date 3", ""),
-            "BILL Date 4": f.get("BILL Date 4", ""),
-            "BILL Date 5": f.get("BILL Date 5", ""),
-            "BILL Date 6": f.get("BILL Date 6", ""),
-            "BILL Date 7": f.get("BILL Date 7", ""),
-            "LINK": f.get("LINK", ""),
-            "Company Path": f.get("Company Path", "")
-        }
-        records.append(record)
-    return records
-
-# def get_reminders_analytics():
-#     """Get analytics for reminders"""
-#     records = airtable_read_reminders()
-#     now_ist = get_ist_now()
-    
-#     analytics = {
-#         "1_week": [],
-#         "1_month": [],
-#         "3_months": [],
-#         "6_months": [],
-#         "6_months_plus": []
-#     }
-    
-#     for r in records:
-#         f = r.get("fields", {})
-#         reminder_time_str = f.get("ReminderTime", "")
-#         try:
-#             reminder_time = datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
-#             reminder_time_ist = convert_to_ist(reminder_time)
+    """Read and clean Airtable records"""
+    try:
+        airtable_records = table.all()
+        records = []
+        
+        for r in airtable_records:
+            f = r.get("fields", {})
             
-#             time_diff = reminder_time_ist - now_ist
-#             days_diff = time_diff.days
+            # Clean and format the record data
+            record = {
+                "ARN No": str(f.get("ARN No", "")).strip(),
+                "ISIN": str(f.get("ISIN", "")).strip(),
+                "Security Type": str(f.get("Security Type", "")).strip(),
+                "Company Name": str(f.get("Company Name", "")).strip(),
+                "ISIN Allotment Date": safe_date_string(f.get("ISIN Allotment Date", "")),
+                "Company reffered By": str(f.get("Company reffered By", "")).strip(),
+                "Email ID": str(f.get("Email ID", "")).strip(),
+                "COMPANY SPOC": str(f.get("COMPANY SPOC", "")).strip(),
+                "GSTIN": str(f.get("GSTIN", "")).strip(),
+                "ADDRESS": str(f.get("ADDRESS", "")).strip(),
+                "Bill Amount": safe_float(f.get("Bill Amount", "")),
+                "BILL Date 1": safe_date_string(f.get("BILL Date 1", "")),
+                "BILL Date 2": safe_date_string(f.get("BILL Date 2", "")),
+                "BILL Date 3": safe_date_string(f.get("BILL Date 3", "")),
+                "BILL Date 4": safe_date_string(f.get("BILL Date 4", "")),
+                "BILL Date 5": safe_date_string(f.get("BILL Date 5", "")),
+                "BILL Date 6": safe_date_string(f.get("BILL Date 6", "")),
+                "BILL Date 7": safe_date_string(f.get("BILL Date 7", "")),
+                "LINK": str(f.get("LINK", "")).strip(),
+                "Company Path": str(f.get("Company Path", "")).strip()
+            }
+            records.append(record)
             
-#             reminder_data = {
-#                 "email": f.get("Email", ""),
-#                 "subject": f.get("Subject", ""),
-#                 "reminder_time": reminder_time_ist,
-#                 "status": f.get("Status", "")
-#             }
-            
-#             if days_diff <= 7:
-#                 analytics["1_week"].append(reminder_data)
-#             elif days_diff <= 30:
-#                 analytics["1_month"].append(reminder_data)
-#             elif days_diff <= 90:
-#                 analytics["3_months"].append(reminder_data)
-#             elif days_diff <= 180:
-#                 analytics["6_months"].append(reminder_data)
-#             else:
-#                 analytics["6_months_plus"].append(reminder_data)
-#         except:
-#             continue
-    
-#     return analytics
+        return records
+    except Exception as e:
+        st.error(f"Error reading Airtable records: {str(e)}")
+        return []
 
 # -------- PAGES -------- #
 def home_page(gmail_data=None):
@@ -446,286 +425,155 @@ def home_page(gmail_data=None):
                     table.create(record)
                     st.success(f"✅ Record for {company_name} added successfully!")
                 except Exception as e:
-                    st.error(f"Failed to add record: {e}")
+                    st.error(f"Failed to add record: {str(e)}")
 
 def database_page():
     st.title("📊 Company & Bills Database")
-    records = airtable_read_records()
+    
+    with st.spinner("Loading database records..."):
+        records = airtable_read_records()
     
     if records:
-        df = pd.DataFrame(records)
-        
-        # Format date columns if you want (optional)
-        date_cols = [
-            "ISIN Allotment Date",
-            "BILL Date 1", "BILL Date 2", "BILL Date 3",
-            "BILL Date 4", "BILL Date 5", "BILL Date 6", "BILL Date 7"
-        ]
-        for col in date_cols:
-            if col in df.columns:
-                # Try to parse with known format
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%d-%b-%y')
-        
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("No records found.")
-
-def authenticate_gmail():
-    creds = None
-    if not os.path.exists('token.json'):
-        token_data = os.environ.get('GMAIL_TOKEN')
-    if token_data:
-        with open('token.json', 'w') as f:
-            f.write(token_data)
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    else:
-        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-        # creds = flow.run_local_server(port=8080)
-        creds = flow.run_console()
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    return build('gmail', 'v1', credentials=creds)
-
-
-def get_email_body(payload):
-    """
-    Recursively search payload parts to find plain text or html content.
-    Returns a tuple (plain_text, html_content) where either can be None.
-    """
-    plain_text = None
-    html_content = None
-
-    if 'parts' in payload:
-        for part in payload['parts']:
-            pt, ht = get_email_body(part)
-            if pt and not plain_text:
-                plain_text = pt
-            if ht and not html_content:
-                html_content = ht
-    else:
-        mime_type = payload.get('mimeType')
-        data = payload.get('body', {}).get('data')
-        if data:
-            decoded = base64.urlsafe_b64decode(data).decode(errors='replace')
-            if mime_type == 'text/plain':
-                plain_text = decoded
-            elif mime_type == 'text/html':
-                html_content = decoded
-
-    return plain_text, html_content
-
-
-def extract_isin_details_from_text(text):
-    results = []
-    for line in text.splitlines():
-        line = line.strip()
-        # Skip header or empty lines
-        if not line or 'Company' in line or 'ISIN' in line or 'Instrument' in line:
-            continue
-        
-        # Look for ISIN pattern in line
-        match = re.search(r'(INE[A-Z0-9]{9})', line)
-        if match:
-            isin = match.group(1)
-            parts = line.split()
-            isin_index = parts.index(isin)
-            company = " ".join(parts[:isin_index])
-            instrument = " ".join(parts[isin_index+1:])
-            results.append({
-                "Company": company,
-                "ISIN": isin,
-                "Instrument": instrument
-            })
-    return results
-def fetch_and_parse_emails(service, subject_filter=SUBJECT_FILTER):
-    existing_isins = {rec["ISIN"] for rec in airtable_read_records() if rec.get("ISIN")}
-
-    results = service.users().messages().list(userId='me', q=f'subject:"{subject_filter}"', maxResults=30).execute()
-    messages = results.get('messages', [])
-    
-    parsed_data = []
-    email_metadata = []
-
-    for msg in messages:
-        msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
-        headers = msg_data['payload']['headers']
-
-        subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '')
-        sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), '')
-        to = next((h['value'] for h in headers if h['name'].lower() == 'to'), '')
-
-        payload = msg_data['payload']
-        plain_text, html_content = get_email_body(payload)
-
-        # # ✅ DEBUG: Show subject
-        # st.write(f"📧 Email Subject: {subject}")
-
-        text_to_parse = plain_text or BeautifulSoup(html_content, "html.parser").get_text(separator="\n") if html_content else None
-
-        # # ✅ DEBUG: Show email body snippet
-        # st.write(f"📄 Body (first 300 chars): {text_to_parse[:300] if text_to_parse else 'No content'}")
-
-        if text_to_parse:
-            extracted = extract_isin_details_from_text(text_to_parse)
-            # st.write(f"🧪 Extracted ISINs: {extracted}")  # DEBUG: What was extracted?
-
-            for entry in extracted:
-                if entry["ISIN"] not in existing_isins:
-                    parsed_data.append(entry)
-                    email_metadata.append({
-                        "Subject": subject,
-                        "From": sender,
-                        "To": to,
-                        "Company": entry["Company"]
-                    })
-            else:
-                # Optional: You can still log the email for debugging
-                email_metadata.append({
-                    "Subject": subject,
-                    "From": sender,
-                    "To": to,
-                    "Company": "❌ No ISIN Found"
-                })
-
-    return email_metadata, parsed_data
-
-
-def isin_record_exists(company_name, isin):
-    records = airtable_read_records()
-    for r in records:
-        if r.get("Company Name", "").strip().lower() == company_name.strip().lower() and \
-           r.get("ISIN", "").strip().lower() == isin.strip().lower():
-            return True
-    return False
-
-def gmail_extractor_page():
-    st.set_page_config(page_title="📧 NSDL ISIN Email Extractor", layout="wide")
-    st.title("📧 NSDL ISIN Details Extractor from Gmail")
-
-    # Don't initialize `data` here — keep it scoped
-    if st.button("Fetch NSDL Emails"):
         try:
-            with st.spinner("Authenticating and reading Gmail..."):
-                service = authenticate_gmail()
-                email_meta, data = fetch_and_parse_emails(service)
-
-            # if email_meta:
-            #     st.subheader("📨 Last 5 Fetched Email Subjects")
-            #     st.table(pd.DataFrame(email_meta))
-
-            if data:
-                st.subheader("📋 Extracted ISIN Details")
-                st.dataframe(data)
-                st.success("ISIN Data fetched successfully! Now go to Home to use it.")
-
-                # ✅ Save to both session_state
-                st.session_state.gmail_data = data
-                st.session_state.fetched_isin_data = data
-            else:
-                st.warning("No ISIN data found in emails.")
+            df = pd.DataFrame(records)
+            
+            # Ensure Bill Amount is properly formatted as numeric
+            df['Bill Amount'] = pd.to_numeric(df['Bill Amount'], errors='coerce').fillna(0.0)
+            
+            # Format Bill Amount for display
+            df['Bill Amount'] = df['Bill Amount'].apply(lambda x: f"₹{x:,.2f}" if x > 0 else "₹0.00")
+            
+            st.dataframe(df, use_container_width=True)
+            
+            # Add some statistics
+            st.subheader("📈 Database Statistics")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Records", len(df))
+            
+            with col2:
+                unique_companies = df['Company Name'].nunique()
+                st.metric("Unique Companies", unique_companies)
+            
+            with col3:
+                unique_isins = df['ISIN'].nunique()
+                st.metric("Unique ISINs", unique_isins)
+                
         except Exception as e:
-            st.error(f"Error: {e}")
-
-    # ✅ This part runs if previously fetched data exists
-    if 'fetched_isin_data' in st.session_state:
-        data = st.session_state.fetched_isin_data
-        st.subheader("📋 Extracted ISIN Details")
-        st.dataframe(data)
-
-        if st.button("📥 Save All New Entries to Airtable"):
-            added = 0
-            skipped = 0
-            for entry in data:
-                company = entry["Company"]
-                isin = entry["ISIN"]
-                instrument = entry["Instrument"]
-
-                if isin_record_exists(company, isin):
-                    skipped += 1
-                    continue
-
-                record = {
-                    "ISIN": isin,
-                    "Security Type": instrument,
-                    "Company Name": company,
-                    "ISIN Allotment Date": datetime.now().strftime("%Y-%m-%d")
-                }
-
-                try:
-                    table.create(record)
-                    added += 1
-                except Exception as e:
-                    st.error(f"Error adding record for {company}: {e}")
-
-            st.success(f"✅ Added {added} new records. Skipped {skipped} existing ones.")
-
+            st.error(f"Error displaying database: {str(e)}")
+            st.info("Raw data preview:")
+            st.json(records[:3] if len(records) > 0 else {})
+    else:
+        st.info("No records found in the database.")
 
 def edit_page():
     st.title("✏️ Edit Company Record by ISIN")
 
-    records = airtable_read_records()
-    isin_options = [rec["ISIN"] for rec in records if rec["ISIN"]]
+    with st.spinner("Loading records..."):
+        records = airtable_read_records()
+    
+    if not records:
+        st.error("No records found in the database.")
+        return
+    
+    # Filter records with valid ISIN
+    valid_records = [rec for rec in records if rec.get("ISIN", "").strip()]
+    
+    if not valid_records:
+        st.error("No records with valid ISIN found.")
+        return
+    
+    isin_options = [rec["ISIN"] for rec in valid_records]
     selected_isin = st.selectbox("Select ISIN to Edit", ["--- Select ---"] + isin_options)
 
     if selected_isin != "--- Select ---":
-        record = next((r for r in records if r["ISIN"] == selected_isin), None)
+        record = next((r for r in valid_records if r["ISIN"] == selected_isin), None)
 
         if record:
             with st.form("edit_form"):
                 st.subheader(f"Editing Record for ISIN: `{selected_isin}`")
-                arn_no = st.text_input("ARN No", value=record.get("ARN No", ""))
-                company_name = st.text_input("Company Name", value=record.get("Company Name", ""))
-                security_type = st.text_input("Security Type", value=record.get("Security Type", ""))
-                company_referred_by = st.text_input("Company referred By", value=record.get("Company reffered By", ""))
-                email_id = st.text_input("Email ID", value=record.get("Email ID", ""))
-                company_spoc = st.text_input("COMPANY SPOC", value=record.get("COMPANY SPOC", ""))
-                gstin = st.text_input("GSTIN", value=record.get("GSTIN", ""))
-                address = st.text_area("ADDRESS", value=record.get("ADDRESS", ""))
-
-                def safe_float(val):
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    arn_no = st.text_input("ARN No", value=record.get("ARN No", ""))
+                    company_name = st.text_input("Company Name", value=record.get("Company Name", ""))
+                    security_type = st.text_input("Security Type", value=record.get("Security Type", ""))
+                    company_referred_by = st.text_input("Company referred By", value=record.get("Company reffered By", ""))
+                    email_id = st.text_input("Email ID", value=record.get("Email ID", ""))
+                    company_spoc = st.text_input("COMPANY SPOC", value=record.get("COMPANY SPOC", ""))
+                    gstin = st.text_input("GSTIN", value=record.get("GSTIN", ""))
+                
+                with col2:
+                    address = st.text_area("ADDRESS", value=record.get("ADDRESS", ""))
+                    bill_amount = st.number_input("Bill Amount", value=safe_float(record.get("Bill Amount", 0)))
+                    link = st.text_input("LINK", value=record.get("LINK", ""))
+                    company_path = st.text_input("Company Path", value=record.get("Company Path", ""))
+                    
+                    # Parse stored date string to date object for default value
                     try:
-                        return float(val)
-                    except (TypeError, ValueError):
-                        return 0.0
+                        bill_date_1_str = record.get("BILL Date 1", "")
+                        if bill_date_1_str:
+                            # Try different date formats
+                            for date_format in ["%Y-%m-%d", "%d-%b-%y", "%d-%B-%Y"]:
+                                try:
+                                    default_bill_date = datetime.strptime(bill_date_1_str, date_format).date()
+                                    break
+                                except ValueError:
+                                    continue
+                            else:
+                                default_bill_date = datetime.now().date()
+                        else:
+                            default_bill_date = datetime.now().date()
+                    except Exception:
+                        default_bill_date = datetime.now().date()
 
-                bill_amount = st.number_input("Bill Amount", value=safe_float(record.get("Bill Amount", 0)))
-                link = st.text_input("LINK", value=record.get("LINK", ""))
-                company_path = st.text_input("Company Path", value=record.get("Company Path", ""))
-                # Parse stored date string to date object for default value
-                try:
-                    default_bill_date = datetime.datetime.strptime(record.get("BILL Date 1", ""), "%Y-%m-%d").date()
-                except Exception:
-                    default_bill_date = datetime.date.today()
-
-                Bill_Date_1 = st.date_input("BILL Date 1", value=default_bill_date, key="bill_date_1")
+                    bill_date_1 = st.date_input("BILL Date 1", value=default_bill_date, key="bill_date_1")
 
                 submit = st.form_submit_button("✅ Update Record")
+                
                 if submit:
-                    airtable_id = next((r["id"] for r in table.all() if r["fields"].get("ISIN") == selected_isin), None)
-                    bill_date_str = Bill_Date_1.strftime("%Y-%m-%d") if Bill_Date_1 else ""
-                    if airtable_id:
-                        updated_data = {
-                            "ARN No": arn_no,
-                            "Company Name": company_name,
-                            "Security Type": security_type,
-                            "Company reffered By": company_referred_by,
-                            "Email ID": email_id,
-                            "COMPANY SPOC": company_spoc,
-                            "GSTIN": gstin,
-                            "ADDRESS": address,
-                            "Bill Amount": bill_amount,
-                            "LINK": link,
-                            "Company Path": company_path,
-                            "BILL Date 1": bill_date_str,
-                        }
-                        table.update(airtable_id, updated_data)
-                        st.write("Updating Airtable record with data:", updated_data)  # debug
-                        st.success("Record updated successfully!")
-                    else:
-                        st.error("Failed to locate Airtable record by ISIN.")
-
-
+                    try:
+                        # Find the Airtable record ID
+                        airtable_records = table.all()
+                        airtable_id = None
+                        
+                        for airtable_record in airtable_records:
+                            if airtable_record["fields"].get("ISIN") == selected_isin:
+                                airtable_id = airtable_record["id"]
+                                break
+                        
+                        if airtable_id:
+                            bill_date_str = bill_date_1.strftime("%Y-%m-%d") if bill_date_1 else ""
+                            
+                            updated_data = {
+                                "ARN No": arn_no,
+                                "Company Name": company_name,
+                                "Security Type": security_type,
+                                "Company reffered By": company_referred_by,
+                                "Email ID": email_id,
+                                "COMPANY SPOC": company_spoc,
+                                "GSTIN": gstin,
+                                "ADDRESS": address,
+                                "Bill Amount": bill_amount,
+                                "LINK": link,
+                                "Company Path": company_path,
+                                "BILL Date 1": bill_date_str,
+                            }
+                            
+                            table.update(airtable_id, updated_data)
+                            st.success("✅ Record updated successfully!")
+                            
+                            # Clear cache to refresh data
+                            if hasattr(st, 'cache_data'):
+                                st.cache_data.clear()
+                            
+                        else:
+                            st.error("❌ Failed to locate Airtable record by ISIN.")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error updating record: {str(e)}")
 
 # -------- MAIN APP -------- #
 # Check authentication first
@@ -750,18 +598,12 @@ with st.sidebar:
     if st.button("Home", use_container_width=True):
         st.session_state.page = "Home"
 
-    if st.button("Gmail Extractor", use_container_width=True):
-        st.session_state.page = "Gmail"
-
     if st.button("✏️ Edit Record", use_container_width=True):
         st.session_state.page = "Edit"
-
 
     st.markdown("---")
     if st.button("Logout", type="primary", use_container_width=True):
         logout()
-    
-
 
 # Initialize page if not set
 if 'page' not in st.session_state:
@@ -773,7 +615,5 @@ if st.session_state.page == "Database":
 elif st.session_state.page == "Home":
     gmail_data = st.session_state.get("gmail_data", [])
     home_page(gmail_data=gmail_data)
-elif st.session_state.page == "Gmail":
-    gmail_extractor_page()
 elif st.session_state.page == "Edit":
     edit_page()
