@@ -192,12 +192,12 @@ def check_authentication():
         """)
         st.stop()
     
-    st.title("🔐 Login to Reminder System")
+    st.title("🔐 Login")
     
     # Combined login form
     with st.form("login_form"):
-        username = st.text_input("Username", placeholder="admin")
-        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
         login_submitted = st.form_submit_button("🔑 Login", type="primary")
         
         if login_submitted:
@@ -213,7 +213,6 @@ def check_authentication():
                         st.session_state.otp_sent = True
                         st.session_state.otp_expiry = datetime.now() + timedelta(minutes=5)
                         st.session_state.otp_attempts = 0
-                        st.info(f"📧 Verification email sent to your registered email: {ADMIN_EMAIL}")
                         st.rerun()
                     else:
                         st.error(f"❌ {message}")
@@ -232,14 +231,18 @@ def check_authentication():
         st.info(f"Please check your email registered email for the verification code.")
         
         with st.form("otp_form"):
-            entered_otp = st.text_input("Enter 6-digit verification code", max_chars=6, placeholder="123456")
+            entered_otp = st.text_input("Enter 6-digit verification code", max_chars=6)
             otp_submitted = st.form_submit_button("🔐 Verify", type="primary")
             
             if otp_submitted:
                 if entered_otp == st.session_state.otp_code:
                     st.session_state.authenticated = True
                     st.success("✅ Login successful!")
+                    with st.spinner("Initializing... Please wait."):
+                        time.sleep(3)  
+                        st.success("Done!")
                     st.rerun()
+                    
                 else:
                     st.session_state.otp_attempts += 1
                     st.error(f"❌ Invalid verification code. Attempt {st.session_state.otp_attempts}/3")
@@ -932,9 +935,8 @@ if not check_authentication():
 
 # Configure page
 st.set_page_config(
-    page_title="Reminder System",
-    page_icon="📧",
-    initial_sidebar_state="collapsed",
+    page_title="Nivis",
+    initial_sidebar_state="expanded",
     layout="wide"
 )
 
