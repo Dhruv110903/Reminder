@@ -20,6 +20,13 @@ from bs4 import BeautifulSoup
 import base64
 import re
 
+# FIX 1: Moved st.set_page_config to the top of the script.
+# It must be the first Streamlit command to run.
+st.set_page_config(
+    page_title="Nivis",
+    initial_sidebar_state="expanded",
+    layout="wide"
+)
 
 load_dotenv()
 
@@ -160,14 +167,14 @@ def init_session_state():
     if 'page' not in st.session_state:
         st.session_state.page = "Overview"
 
-def reset_auth_state():
-    """Reset authentication state"""
-    st.session_state.authenticated = False
-    st.session_state.credentials_verified = False
-    st.session_state.otp_sent = False
-    st.session_state.otp_code = None
-    st.session_state.otp_expiry = None
-    st.session_state.otp_attempts = 0
+# def reset_auth_state():
+#     """Reset authentication state"""
+#     st.session_state.authenticated = False
+#     st.session_state.credentials_verified = False
+#     st.session_state.otp_sent = False
+#     st.session_state.otp_code = None
+#     st.session_state.otp_expiry = None
+#     st.session_state.otp_attempts = 0
 
 def is_otp_expired():
     """Check if OTP has expired"""
@@ -175,8 +182,9 @@ def is_otp_expired():
         return True
     return datetime.now() > st.session_state.otp_expiry
 
+
 def check_authentication():
-    """Simplified authentication system with Email OTP"""
+    """Simplified authentication system with Email OTP and improved UI."""
     init_session_state()
     
     if st.session_state.authenticated:
@@ -184,7 +192,7 @@ def check_authentication():
     
     # Check if email configuration is set
     if not SMTP_EMAIL or not SMTP_PASSWORD or not ADMIN_EMAIL:
-        st.error("❌ Email configuration missing. Please check your environment variables:")
+        st.error("❌ Email configuration missing. Please check your environment variables.")
         st.code("""
         SMTP_EMAIL=your-email@gmail.com
         SMTP_PASSWORD=your-app-password
@@ -192,84 +200,116 @@ def check_authentication():
         """)
         st.stop()
     
-    st.title("🔐 Login")
-    
-    # Combined login form
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        login_submitted = st.form_submit_button("🔑 Login", type="primary")
-        
-        if login_submitted:
-            if username == AUTH_USERNAME and password == AUTH_PASSWORD:
-                # Credentials verified, send OTP
-                with st.spinner("Sending verification email..."):
-                    otp = generate_otp()
-                    success, message = send_otp_email(ADMIN_EMAIL, otp)
+    # UI IMPROVEMENT: Centered the main title using markdown.
+    st.markdown("<h1 style='text-align: center;'>Nivis</h1>", unsafe_allow_html=True)
+
+    # --- UI IMPROVEMENT: Centered Login Form ---
+    login_col1, login_col2, login_col3 = st.columns([1, 1.5, 1])
+
+    with login_col2:
+        with st.form("login_form"):
+            st.markdown("<h4 style='text-align: left;'>Enter Credentials</h4>", unsafe_allow_html=True)
+            
+            username = st.text_input("Username", placeholder="Username", label_visibility="collapsed")
+            password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
+            
+            login_submitted = st.form_submit_button(
+                label="Login", 
+                type="primary", 
+                use_container_width=True
+            )
+            
+            if login_submitted:
+                if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+                    with st.spinner("Sending verification email..."):
+                        otp = generate_otp()
+                        success, message = send_otp_email(ADMIN_EMAIL, otp)
+                        
+                        if success:
+                            st.session_state.credentials_verified = True
+                            st.session_state.otp_code = otp
+                            st.session_state.otp_sent = True
+                            st.session_state.otp_expiry = datetime.now() + timedelta(minutes=5)
+                            st.session_state.otp_attempts = 0
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+                else:
+                    st.session_state.login_attempts += 1
+                    st.error(f"❌ Invalid credentials. Attempt {st.session_state.login_attempts}/5")
                     
-                    if success:
-                        st.session_state.credentials_verified = True
-                        st.session_state.otp_code = otp
-                        st.session_state.otp_sent = True
-                        st.session_state.otp_expiry = datetime.now() + timedelta(minutes=5)
-                        st.session_state.otp_attempts = 0
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {message}")
-            else:
-                st.session_state.login_attempts += 1
-                st.error(f"❌ Invalid credentials. Attempt {st.session_state.login_attempts}/5")
-                
-                if st.session_state.login_attempts >= 5:
-                    st.error("🚫 Too many failed attempts. Please refresh the page and try again later.")
-                    st.stop()
+                    if st.session_state.login_attempts >= 5:
+                        st.error("🚫 Too many failed attempts. Please refresh the page and try again later.")
+                        st.stop()
     
-    # OTP verification form (shown after credentials are verified)
+    # --- UI IMPROVEMENT: Centered OTP Verification Form ---
     if st.session_state.credentials_verified and st.session_state.otp_sent and not is_otp_expired():
         st.markdown("---")
-        st.subheader("📧 Email Verification")
-        st.info(f"Please check your email registered email for the verification code.")
-        
-        with st.form("otp_form"):
-            entered_otp = st.text_input("Enter 6-digit verification code", max_chars=6)
-            otp_submitted = st.form_submit_button("🔐 Verify", type="primary")
-            
-            if otp_submitted:
-                if entered_otp == st.session_state.otp_code:
-                    st.session_state.authenticated = True
-                    st.success("✅ Login successful!")
-                    with st.spinner("Initializing... Please wait."):
-                        time.sleep(3)  
-                        st.success("Done!")
-                    st.rerun()
-                    
-                else:
-                    st.session_state.otp_attempts += 1
-                    st.error(f"❌ Invalid verification code. Attempt {st.session_state.otp_attempts}/3")
-                    
-                    if st.session_state.otp_attempts >= 3:
-                        st.error("🚫 Too many attempts. Please login again.")
-                        reset_auth_state()
+        otp_col1, otp_col2, otp_col3 = st.columns([1, 1.5, 1])
+
+        with otp_col2:
+            with st.form("otp_form"):
+                st.markdown("<h3 style='text-align: center;'>Email Verification</h3>", unsafe_allow_html=True)
+                st.info("Please check your email for the verification code.")
+                
+                entered_otp = st.text_input("Enter 6-digit verification code", max_chars=6, placeholder="Enter 6-digit code", label_visibility="collapsed")
+                
+                otp_submitted = st.form_submit_button(
+                    label="Verify", 
+                    type="primary", 
+                    use_container_width=True
+                )
+                
+                if otp_submitted:
+                    if entered_otp == st.session_state.otp_code:
+                        st.session_state.authenticated = True
+                        st.success("✅ Login successful! Loading dashboard...")
+                        time.sleep(1)
                         st.rerun()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📧 Resend Code"):
+                    else:
+                        st.session_state.otp_attempts += 1
+                        st.error(f"❌ Invalid verification code. Attempt {st.session_state.otp_attempts}/3")
+                        
+                        if st.session_state.otp_attempts >= 3:
+                            st.error("🚫 Too many attempts. Please login again.")
+                            logout() 
+            
+            # UI IMPROVEMENT: Changed button type to "primary" to match the others.
+            if st.button("Resend Code", use_container_width=True, type="primary"):
                 st.session_state.otp_sent = False
                 st.session_state.credentials_verified = False
                 st.rerun()
     
     elif st.session_state.credentials_verified and is_otp_expired():
-        st.error("⏰ Verification code has expired. Please login again.")
-        reset_auth_state()
-        st.rerun()
+        st.error("Verification code has expired. Please login again.")
+        logout()
     
     return False
+    
+# def logout():
+#     """Logout function"""
+#     reset_auth_state()
+#     # FIX: Reset the page to a default view to prevent an immediate re-logout.
+#     st.session_state.page = "Overview" 
+#     st.success("👋 Logged out successfully!")
+#     st.rerun()
 
 def logout():
-    """Logout function"""
-    reset_auth_state()
-    st.success("👋 Logged out successfully!")
+    """Logs out the user with a full cache and session state clear."""
+    st.success("👋 Logged out successfully! Resetting application...")
+    
+    # Clear all cached app data
+    st.cache_data.clear()
+    
+    # Create a list of all keys in the session state
+    keys = list(st.session_state.keys())
+    
+    # Iterate over the keys and delete each one
+    for key in keys:
+        st.session_state.pop(key)
+        
+    # A short delay can help ensure the state is fully cleared before the rerun
+    time.sleep(1) 
     st.rerun()
 
 # -------- AIRTABLE SETUP -------- #
@@ -355,7 +395,7 @@ def airtable_read_records():
 def overview_page():
     st.title("Overview")
     
-    with st.spinner("Loading overview ..."):
+    with st.spinner("Initializing the app..."):
         records = airtable_read_records()
     
     if records:
@@ -384,11 +424,11 @@ def overview_page():
             with col3:
                 total_bill_amount = analytics_df['Bill Amount'].sum()
                 # Add toggle button for showing/hiding bill amount
-                show_amount = st.checkbox("👁️ Show Total Bill Amount", value=False)
+                show_amount = st.checkbox("Show Total Value", value=False)
                 if show_amount:
-                    st.metric("Total Bill Amount", f"₹{total_bill_amount:,.2f}")
+                    st.metric("Total Billing value", f"₹{total_bill_amount:,.2f}")
                 else:
-                    st.metric("Total Bill Amount", "₹-- --")
+                    st.metric("Total Billing value", "****")
             
             # New Entries Analysis (Gmail extracted entries)
             st.subheader("New contracts")
@@ -596,9 +636,6 @@ def overview_page():
                     st.subheader(f"💰 {granularity} Revenue Trend")
                     st.line_chart(data=plot_df, x=x_axis, y="Total Bill Amount")
 
-
-
-
             # Company-wise Analysis
             st.subheader("🏢 Company-wise Analysis")
             
@@ -615,33 +652,6 @@ def overview_page():
             
             with st.expander(f"📊 View Company-wise Analysis ({len(company_counts)} companies)", expanded=False):
                 st.dataframe(company_counts.sort_values('Total Records', ascending=False), use_container_width=True)
-            
-            # # ===== BUSINESS INTELLIGENCE SECTION =====
-            # st.subheader("📈 Business Intelligence Dashboard")
-            
-            # # Monthly Trends Analysis
-            # st.subheader("📅 Monthly Trends")
-            
-            # # Convert ISIN Allotment Date to datetime for analysis
-            # analytics_df['ISIN Allotment Date'] = pd.to_datetime(analytics_df['ISIN Allotment Date'], errors='coerce')
-            # analytics_df['Month_Year'] = analytics_df['ISIN Allotment Date'].dt.to_period('M')
-            
-            # # Monthly registration trends
-            # monthly_trends = analytics_df.groupby('Month_Year').agg({
-            #     'Company Name': 'count',
-            #     'Bill Amount': 'sum'
-            # }).reset_index()
-            # monthly_trends.columns = ['Month', 'New Registrations', 'Total Bill Amount']
-            
-            # if len(monthly_trends) > 0:
-            #     col1, col2 = st.columns(2)
-            #     with col1:
-            #         st.subheader("📊 Monthly Registrations")
-            #         st.line_chart(monthly_trends.set_index('Month')['New Registrations'])
-                
-            #     with col2:
-            #         st.subheader("💰 Monthly Revenue Trend")
-            #         st.line_chart(monthly_trends.set_index('Month')['Total Bill Amount'])
             
             # Security Type Distribution
             st.subheader("🏷️ Security Type Distribution")
@@ -702,7 +712,7 @@ def overview_page():
         st.info("No records found in the database.")
 
 def database_page():
-    st.title("📋 Complete Database Records")
+    st.title("Database")
     
     with st.spinner("Loading database records..."):
         records = airtable_read_records()
@@ -768,7 +778,7 @@ def database_page():
 
 def new_entry_page():
     """Page for creating a new record."""
-    st.title("➕ Create a New Entry")
+    st.title("Create a New Entry")
 
     with st.form("new_entry_form", clear_on_submit=True):
         st.subheader("Enter New Record Details")
@@ -796,7 +806,7 @@ def new_entry_page():
             bill_date_1 = st.date_input("BILL Date 1", value=None)
 
         st.markdown("_* Fields are required_")
-        submit_button = st.form_submit_button("✅ Create New Entry", type="primary")
+        submit_button = st.form_submit_button("Create New Entry", type="primary")
         
         if submit_button:
             # Basic validation
@@ -830,7 +840,7 @@ def new_entry_page():
                     st.error(f"❌ Failed to create new entry: {str(e)}")
 
 def edit_page():
-    st.title("✏️ Edit Company Record by ISIN")
+    st.title("Edit Company Record by ISIN")
 
     with st.spinner("Loading records..."):
         records = airtable_read_records()
@@ -933,13 +943,6 @@ def edit_page():
 if not check_authentication():
     st.stop()
 
-# Configure page
-st.set_page_config(
-    page_title="Nivis",
-    initial_sidebar_state="expanded",
-    layout="wide"
-)
-
 # Professional sidebar navigation using streamlit-option-menu
 with st.sidebar:
     st.markdown("<h1 style='text-align: center; color: #0d6efd;'>Reminder App</h1>", unsafe_allow_html=True)
@@ -962,15 +965,17 @@ with st.sidebar:
         icons=icons,
         menu_icon="cast",
         default_index=default_index,
+        # FIX 2: Updated styles for dark mode visibility and mobile padding
         styles={
-            "container": {"padding": "5px !important", "background-color": "#f8f9fa"},
-            "icon": {"color": "#495057", "font-size": "20px"},
+            "container": {"padding": "15px 5px !important", "background-color": "transparent"},
+            "icon": {"color": "#6c757d", "font-size": "20px"},
             "nav-link": {
                 "font-size": "16px",
                 "text-align": "left",
                 "margin": "0px",
                 "padding": "10px",
-                "--hover-color": "#e9ecef",
+                "color": "#6c757d",  # Set text color for visibility in dark mode
+                "--hover-color": "#e9ecef", # Hover color works in light/dark
                 "border-radius": "5px",
             },
             "nav-link-selected": {"background-color": "#0d6efd", "color": "white"},
