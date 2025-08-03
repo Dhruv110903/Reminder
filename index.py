@@ -20,15 +20,15 @@ from bs4 import BeautifulSoup
 import base64
 import re
 
-# --- HIDE STREAMLIT STYLE ---
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
+# # --- HIDE STREAMLIT STYLE ---
+# hide_st_style = """
+#             <style>
+#             #MainMenu {visibility: hidden;}
+#             footer {visibility: hidden;}
+#             header {visibility: hidden;}
+#             </style>
+#             """
+# st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # It must be the first Streamlit command to run.
 st.set_page_config(
@@ -360,6 +360,36 @@ def airtable_read_records():
         st.error(f"Error reading Airtable records: {str(e)}")
         return []
 
+
+# def display_kpi_card(title, value, mom_change):
+#     """
+#     Displays a smaller, styled KPI card with a title, value, and Month-over-Month change.
+#     """
+#     if mom_change >= 0:
+#         arrow = "▲"
+#         color = "green"
+#     else:
+#         arrow = "▼"
+#         color = "red"
+        
+#     card_html = f"""
+#     <div style="
+#         border: 1px solid #2D2D2D;
+#         border-radius: 10px;
+#         padding: 15px; /* Reduced padding from 20px */
+#         background-color: #84cccf;
+#         text-align: center;
+#         box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+#     ">
+#         <h3 style="color: #000000; margin: 0 0 5px 0; font-size: 1.2rem;">{title}</h3> 
+#         <h1 style="color: #000000; margin: 0 0 5px 0; font-size: 2rem;">{value}</h1> 
+#         <p style="color: {color}; font-size: 16px; margin: 0;"> 
+#             {arrow} {abs(mom_change):.1f}% MoM
+#         </p>
+#     </div>
+#     """
+#     st.markdown(card_html, unsafe_allow_html=True)
+
 def overview_page():
     st.title("Overview")
     
@@ -371,10 +401,36 @@ def overview_page():
             df = pd.DataFrame(records)
             df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0.0)
             analytics_df = df.copy()
-            
-            # ===== ANALYTICS SECTION =====
+
+            # ===== ANALYTICS SECTION (Now includes KPIs) =====
             st.subheader("Analytics")
             
+            # --- Row 1: Monthly KPIs ---
+            # Dummy Data for KPIs
+            current_registrations = random.randint(80, 150)
+            registrations_mom_change = random.uniform(-15.0, 25.0)
+            
+            current_billing_value = random.randint(250000, 500000)
+            current_billing_display = f"₹{current_billing_value:,}"
+            billing_mom_change = random.uniform(-10.0, 30.0)
+
+            kpi_col1, kpi_col2 = st.columns(2)
+            with kpi_col1:
+                # Use st.metric for a clean look with automatic up/down arrows
+                st.metric(
+                    label="Monthly Registrations", 
+                    value=current_registrations, 
+                    delta=f"{registrations_mom_change:.1f}% MoM"
+                )
+            
+            with kpi_col2:
+                st.metric(
+                    label="Monthly Billing", 
+                    value=current_billing_display, 
+                    delta=f"{billing_mom_change:.1f}% MoM"
+                )
+
+            # --- Row 2: Core Metrics ---
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Total Records", len(df))
@@ -388,7 +444,9 @@ def overview_page():
                 else:
                     st.metric("Total Billing value", "****")
             
-            # New Entries Analysis
+            st.markdown("---") # Visual separator
+
+            # ===== New Entries Analysis =====
             st.subheader("New contracts")
             
             incomplete_entries = analytics_df[
@@ -409,7 +467,7 @@ def overview_page():
                     incomplete_display = incomplete_entries[['Issuer', 'ISIN', 'Status']].copy()
                     st.dataframe(incomplete_display, use_container_width=True)
             
-            # Bill Due Analysis
+            # ===== Bill Due Analysis =====
             st.subheader("📅 Bill Due Date Analysis")
             
             current_date = datetime.now().date()
@@ -446,16 +504,10 @@ def overview_page():
                 if len(due_1_week) > 0:
                     with st.expander(f"🚨 View Urgent Bills ({len(due_1_week)} bills due in 1 week)", expanded=False):
                         st.dataframe(due_1_week.sort_values('Days Until Due'), use_container_width=True)
-                
-                bills_df['Due Category'] = bills_df['Days Until Due'].apply(
-                    lambda x: '1 Week' if x <= 7 else '1 Month' if x <= 30 else '3 Months' if x <= 90 else 'Later'
-                )
-                due_distribution = bills_df['Due Category'].value_counts()
-                st.bar_chart(due_distribution)
             else:
                 st.info("No upcoming bill dates found in the database.")
             
-            # Company-wise Analysis
+            # ===== Company-wise Analysis =====
             st.subheader("🏢 Company-wise Analysis")
             company_counts = analytics_df.groupby('Issuer').agg({
                 'ISIN': 'count',
@@ -470,12 +522,25 @@ def overview_page():
             with st.expander(f"📊 View Company-wise Analysis ({len(company_counts)} companies)", expanded=False):
                 st.dataframe(company_counts.sort_values('Total Records', ascending=False), use_container_width=True)
             
-            # Status Distribution
+            # # ===== Status Distribution =====
+            # st.subheader("📊 Status Distribution")
+            # status_distribution = analytics_df['Status'].value_counts()
+            # st.dataframe(status_distribution)
+            
+            # ===== Status Distribution =====
             st.subheader("📊 Status Distribution")
             status_distribution = analytics_df['Status'].value_counts()
-            st.bar_chart(status_distribution)
-            
-            # Financial Health Indicators
+
+            # Create columns for each status. The number of columns adjusts to the number of unique statuses.
+            cols = st.columns(len(status_distribution))
+
+            # Iterate through the statuses and display each one in its own column as a metric.
+            for i, (status, count) in enumerate(status_distribution.items()):
+                with cols[i]:
+                    st.metric(label=status, value=count)
+
+
+            # ===== Financial Health Indicators =====
             st.subheader("💡 Financial Health Indicators")
             avg_bill_amount = analytics_df['Amount'].mean()
             high_value_clients = len(analytics_df[analytics_df['Amount'] > avg_bill_amount * 2])
@@ -806,7 +871,7 @@ if not check_authentication():
     st.stop()
 
 with st.sidebar:
-    st.markdown("<h1 style='text-align: center; color: #0d6efd;'>Reminder App</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #0d6efd;'>NIVIS</h1>", unsafe_allow_html=True)
     
     pages = ["Overview", "Database", "New Record", "Edit Record", "Logout"]
     icons = ["speedometer2", "table", "plus-square-dotted", "pencil-square", "box-arrow-right"]
