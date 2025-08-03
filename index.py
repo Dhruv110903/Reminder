@@ -20,7 +20,6 @@ from bs4 import BeautifulSoup
 import base64
 import re
 
-# FIX 1: Moved st.set_page_config to the top of the script.
 # It must be the first Streamlit command to run.
 st.set_page_config(
     page_title="Nivis",
@@ -167,30 +166,18 @@ def init_session_state():
     if 'page' not in st.session_state:
         st.session_state.page = "Overview"
 
-# def reset_auth_state():
-#     """Reset authentication state"""
-#     st.session_state.authenticated = False
-#     st.session_state.credentials_verified = False
-#     st.session_state.otp_sent = False
-#     st.session_state.otp_code = None
-#     st.session_state.otp_expiry = None
-#     st.session_state.otp_attempts = 0
-
 def is_otp_expired():
     """Check if OTP has expired"""
     if st.session_state.otp_expiry is None:
         return True
     return datetime.now() > st.session_state.otp_expiry
-
-
 def check_authentication():
-    """Simplified authentication system with Email OTP and improved UI."""
+    """Improved authentication system with pre-loading and smoother UI transition."""
     init_session_state()
     
     if st.session_state.authenticated:
         return True
     
-    # Check if email configuration is set
     if not SMTP_EMAIL or not SMTP_PASSWORD or not ADMIN_EMAIL:
         st.error("❌ Email configuration missing. Please check your environment variables.")
         st.code("""
@@ -200,117 +187,89 @@ def check_authentication():
         """)
         st.stop()
     
-    # UI IMPROVEMENT: Centered the main title using markdown.
     st.markdown("<h1 style='text-align: center;'>Nivis</h1>", unsafe_allow_html=True)
 
-    # --- UI IMPROVEMENT: Centered Login Form ---
     login_col1, login_col2, login_col3 = st.columns([1, 1.5, 1])
 
     with login_col2:
-        with st.form("login_form"):
-            st.markdown("<h4 style='text-align: left;'>Enter Credentials</h4>", unsafe_allow_html=True)
-            
-            username = st.text_input("Username", placeholder="Username", label_visibility="collapsed")
-            password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
-            
-            login_submitted = st.form_submit_button(
-                label="Login", 
-                type="primary", 
-                use_container_width=True
-            )
-            
-            if login_submitted:
-                if username == AUTH_USERNAME and password == AUTH_PASSWORD:
-                    with st.spinner("Sending verification email..."):
-                        otp = generate_otp()
-                        success, message = send_otp_email(ADMIN_EMAIL, otp)
-                        
-                        if success:
-                            st.session_state.credentials_verified = True
-                            st.session_state.otp_code = otp
-                            st.session_state.otp_sent = True
-                            st.session_state.otp_expiry = datetime.now() + timedelta(minutes=5)
-                            st.session_state.otp_attempts = 0
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {message}")
-                else:
-                    st.session_state.login_attempts += 1
-                    st.error(f"❌ Invalid credentials. Attempt {st.session_state.login_attempts}/5")
-                    
-                    if st.session_state.login_attempts >= 5:
-                        st.error("🚫 Too many failed attempts. Please refresh the page and try again later.")
-                        st.stop()
-    
-    # --- UI IMPROVEMENT: Centered OTP Verification Form ---
-    if st.session_state.credentials_verified and st.session_state.otp_sent and not is_otp_expired():
-        st.markdown("---")
-        otp_col1, otp_col2, otp_col3 = st.columns([1, 1.5, 1])
+        # This is now a single if/elif chain to fix the SyntaxError
+        if not st.session_state.credentials_verified:
+            with st.form("login_form"):
+                st.markdown("<h4 style='text-align: left;'>Enter Credentials</h4>", unsafe_allow_html=True)
+                
+                username = st.text_input("Username", placeholder="Username", label_visibility="collapsed")
+                password = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
+                
+                login_submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+                
+                if login_submitted:
+                    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+                        with st.spinner("Sending verification email..."):
+                            otp = generate_otp()
+                            success, message = send_otp_email(ADMIN_EMAIL, otp)
+                            
+                            if success:
+                                st.session_state.credentials_verified = True
+                                st.session_state.otp_code = otp
+                                st.session_state.otp_sent = True
+                                st.session_state.otp_expiry = datetime.now() + timedelta(minutes=5)
+                                st.session_state.otp_attempts = 0
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {message}")
+                    else:
+                        st.session_state.login_attempts += 1
+                        st.error(f"❌ Invalid credentials. Attempt {st.session_state.login_attempts}/5")
+                        if st.session_state.login_attempts >= 5:
+                            st.error("🚫 Too many failed attempts. Please refresh the page and try again later.")
+                            st.stop()
 
-        with otp_col2:
+        elif st.session_state.otp_sent and not is_otp_expired():
+            st.markdown("---")
             with st.form("otp_form"):
                 st.markdown("<h3 style='text-align: center;'>Email Verification</h3>", unsafe_allow_html=True)
                 st.info("Please check your email for the verification code.")
                 
                 entered_otp = st.text_input("Enter 6-digit verification code", max_chars=6, placeholder="Enter 6-digit code", label_visibility="collapsed")
                 
-                otp_submitted = st.form_submit_button(
-                    label="Verify", 
-                    type="primary", 
-                    use_container_width=True
-                )
+                otp_submitted = st.form_submit_button("Verify", type="primary", use_container_width=True)
                 
                 if otp_submitted:
                     if entered_otp == st.session_state.otp_code:
+                        with st.spinner("Preparing your dashboard..."):
+                            airtable_read_records()
+                        
                         st.session_state.authenticated = True
-                        st.success("✅ Login successful! Loading dashboard...")
+                        st.success("✅ Login successful!")
                         time.sleep(1)
                         st.rerun()
                     else:
                         st.session_state.otp_attempts += 1
                         st.error(f"❌ Invalid verification code. Attempt {st.session_state.otp_attempts}/3")
-                        
                         if st.session_state.otp_attempts >= 3:
                             st.error("🚫 Too many attempts. Please login again.")
-                            logout() 
+                            logout()
             
-            # UI IMPROVEMENT: Changed button type to "primary" to match the others.
-            if st.button("Resend Code", use_container_width=True, type="primary"):
+            if st.button("Resend Code"):
                 st.session_state.otp_sent = False
                 st.session_state.credentials_verified = False
                 st.rerun()
     
-    elif st.session_state.credentials_verified and is_otp_expired():
-        st.error("Verification code has expired. Please login again.")
-        logout()
+        elif st.session_state.credentials_verified and is_otp_expired():
+            st.error("Verification code has expired. Please login again.")
+            logout()
     
     return False
     
-# def logout():
-#     """Logout function"""
-#     reset_auth_state()
-#     # FIX: Reset the page to a default view to prevent an immediate re-logout.
-#     st.session_state.page = "Overview" 
-#     st.success("👋 Logged out successfully!")
-#     st.rerun()
-
 def logout():
     """Logs out the user with a full cache and session state clear."""
     st.success("👋 Logged out successfully! Resetting application...")
-    
-    # Clear all cached app data
     st.cache_data.clear()
-    
-    # Create a list of all keys in the session state
     keys = list(st.session_state.keys())
-    
-    # Iterate over the keys and delete each one
     for key in keys:
         st.session_state.pop(key)
-        
-    # A short delay can help ensure the state is fully cleared before the rerun
     time.sleep(1) 
-    st.rerun()
+    st.rerun()  
 
 # -------- AIRTABLE SETUP -------- #
 table = Api(AIRTABLE_PERSONAL_ACCESS_TOKEN).table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
@@ -341,50 +300,49 @@ def safe_date_string(date_str):
     if not date_str:
         return ""
     try:
-        # Try to parse and reformat the date
         if isinstance(date_str, str):
-            parsed_date = pd.to_datetime(date_str, errors='coerce')
+            # Added dayfirst=True to correctly parse D/M/Y formats
+            parsed_date = pd.to_datetime(date_str, errors='coerce', dayfirst=True) 
             if pd.isna(parsed_date):
                 return ""
-            return parsed_date.strftime('%d-%b-%y')
+            return parsed_date.strftime('%Y-%m-%d')
         return date_str
     except:
         return ""
 
-# -------- AIRTABLE HELPERS -------- #
-@st.cache_data(ttl=600) # Cache data for 10 minutes for performance
+# -------- AIRTABLE HELPERS (FINAL VERSION) -------- #
+@st.cache_data(ttl=120)
 def airtable_read_records():
-    """Read and clean Airtable records"""
+    """Read and clean Airtable records using case-insensitive lookup."""
     try:
         airtable_records = table.all()
         records = []
         
         for r in airtable_records:
             f = r.get("fields", {})
+            f_lower = {k.lower(): v for k, v in f.items()}
             
-            # Clean and format the record data
             record = {
-                "ARN No": str(f.get("ARN No", "")).strip(),
-                "ISIN": str(f.get("ISIN", "")).strip(),
-                "Security Type": str(f.get("Security Type", "")).strip(),
-                "Company Name": str(f.get("Company Name", "")).strip(),
-                "ISIN Allotment Date": safe_date_string(f.get("ISIN Allotment Date", "")),
-                "Company reffered By": str(f.get("Company reffered By", "")).strip(),
-                "Email ID": str(f.get("Email ID", "")).strip(),
-                "COMPANY SPOC": str(f.get("COMPANY SPOC", "")).strip(),
-                "GSTIN": str(f.get("GSTIN", "")).strip(),
-                "ADDRESS": str(f.get("ADDRESS", "")).strip(),
-                "Bill Amount": safe_float(f.get("Bill Amount", "")),
-                "BILL Date 1": safe_date_string(f.get("BILL Date 1", "")),
-                "BILL Date 2": safe_date_string(f.get("BILL Date 2", "")),
-                "BILL Date 3": safe_date_string(f.get("BILL Date 3", "")),
-                "BILL Date 4": safe_date_string(f.get("BILL Date 4", "")),
-                "BILL Date 5": safe_date_string(f.get("BILL Date 5", "")),
-                "BILL Date 6": safe_date_string(f.get("BILL Date 6", "")),
-                "BILL Date 7": safe_date_string(f.get("BILL Date 7", "")),
-                "LINK": str(f.get("LINK", "")).strip(),
-                "Company Path": str(f.get("Company Path", "")).strip()
+                "Depository": str(f_lower.get("depository", "")).strip(),
+                "ISIN": str(f_lower.get("isin", "")).strip(),
+                "Issuer": str(f_lower.get("issuer", "")).strip(),
+                "ARN": str(f_lower.get("arn if isin na (nsdl)", "")).strip(),
+                "Status": str(f_lower.get("status", "")).strip(),
+                "No of ISINs": str(f_lower.get("no of isin", "")).strip(),
+                "ISIN Allotment Date": safe_date_string(f_lower.get("isin allotment date", "")),
+                "GSTIN": str(f_lower.get("gstin", "")).strip(),
+                "Address": str(f_lower.get("address", "")).strip(),
+                "Company Link": str(f_lower.get("company link", "")).strip(),
+                "Email ID": str(f_lower.get("email id", "")).strip(),
+                "Company Referred By": str(f_lower.get("company referred by", "")).strip(),
+                "Amount": safe_float(f_lower.get("amount", 0)),
             }
+            
+            for i in range(1, 73):
+                field_name = f"bill date {i}"
+                display_name = f"Bill Date {i}"
+                record[display_name] = safe_date_string(f_lower.get(field_name, ""))
+            
             records.append(record)
             
         return records
@@ -395,105 +353,68 @@ def airtable_read_records():
 def overview_page():
     st.title("Overview")
     
-    with st.spinner("Initializing the app..."):
-        records = airtable_read_records()
+    # Data is pre-loaded during login, so no spinner is needed here.
+    records = airtable_read_records()
     
     if records:
         try:
             df = pd.DataFrame(records)
-            
-            # Ensure Bill Amount is properly formatted as numeric
-            df['Bill Amount'] = pd.to_numeric(df['Bill Amount'], errors='coerce').fillna(0.0)
-            
-            # Create a copy for analytics
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0.0)
             analytics_df = df.copy()
             
             # ===== ANALYTICS SECTION =====
             st.subheader("Analytics")
             
-            # Basic Statistics
             col1, col2, col3 = st.columns(3)
-            
             with col1:
                 st.metric("Total Records", len(df))
-            
             with col2:
-                unique_companies = df['Company Name'].nunique()
-                st.metric("Unique Companies", unique_companies)
-
+                st.metric("Unique Companies", df['Issuer'].nunique())
             with col3:
-                total_bill_amount = analytics_df['Bill Amount'].sum()
-                # Add toggle button for showing/hiding bill amount
+                total_bill_amount = analytics_df['Amount'].sum()
                 show_amount = st.checkbox("Show Total Value", value=False)
                 if show_amount:
                     st.metric("Total Billing value", f"₹{total_bill_amount:,.2f}")
                 else:
                     st.metric("Total Billing value", "****")
             
-            # New Entries Analysis (Gmail extracted entries)
+            # New Entries Analysis
             st.subheader("New contracts")
             
-            # Identify new entries - records that have only ISIN, Instrument, and Company Name filled
-            # Consider an entry "new" if ARN No is empty (indicating it came from Gmail extraction)
-            new_entries = analytics_df[
-                (analytics_df['ARN No'].fillna('').str.strip() == '') |
-                (analytics_df['Email ID'].fillna('').str.strip() == '') |
-                (analytics_df['COMPANY SPOC'].fillna('').str.strip() == '')
-            ]
-            
-            # More specific check - entries that have basic info but missing critical fields
             incomplete_entries = analytics_df[
-                (analytics_df['ARN No'].fillna('').str.strip() == '') &
-                (analytics_df['Company Name'].fillna('').str.strip() != '') &
+                (analytics_df['ARN'].fillna('').str.strip() == '') &
+                (analytics_df['Issuer'].fillna('').str.strip() != '') &
                 (analytics_df['ISIN'].fillna('').str.strip() != '')
             ]
             
             col1, col2 = st.columns(2)
-            
             with col1:
                 st.metric("📥 New/Incomplete Entries", len(incomplete_entries))
-                
             with col2:
-                pending_entries = len(incomplete_entries)
-                st.metric("⏳ Pending Completion", pending_entries)
+                st.metric("⏳ Pending Completion", len(incomplete_entries))
             
-            # Show incomplete entries if any
             if len(incomplete_entries) > 0:
                 with st.expander(f"🔍 View Incomplete Records ({len(incomplete_entries)} records)", expanded=False):
                     st.write("**Records requiring completion:**")
-                    incomplete_display = incomplete_entries[['Company Name', 'ISIN', 'Security Type']].copy()
+                    incomplete_display = incomplete_entries[['Issuer', 'ISIN', 'Status']].copy()
                     st.dataframe(incomplete_display, use_container_width=True)
             
             # Bill Due Analysis
             st.subheader("📅 Bill Due Date Analysis")
             
-            # Get current date
             current_date = datetime.now().date()
-            
-            # Initialize variables
-            due_1_week = pd.DataFrame()
-            due_1_month = pd.DataFrame()
-            due_3_months = pd.DataFrame()
-            bills_df = pd.DataFrame()
-            
-            # Process all bill dates
             bill_dates = []
             for index, row in analytics_df.iterrows():
-                company_name = row['Company Name']
-                for i in range(1, 8):  # BILL Date 1 to 7
-                    bill_date_col = f'BILL Date {i}'
-                    if bill_date_col in row and pd.notna(row[bill_date_col]):
+                issuer_name = row['Issuer']
+                for i in range(1, 73):
+                    bill_date_col = f'Bill Date {i}'
+                    if bill_date_col in row and pd.notna(row[bill_date_col]) and row[bill_date_col] != '':
                         try:
-                            if isinstance(row[bill_date_col], str):
-                                bill_date = datetime.strptime(row[bill_date_col], '%Y-%m-%d').date()
-                            else:
-                                bill_date = row[bill_date_col]
-                            
-                            # Only consider future dates
+                            bill_date = datetime.strptime(row[bill_date_col], '%Y-%m-%d').date()
                             if bill_date >= current_date:
                                 days_until_due = (bill_date - current_date).days
                                 bill_dates.append({
-                                    'Company Name': company_name,
+                                    'Issuer': issuer_name,
                                     'Bill Date': bill_date,
                                     'Days Until Due': days_until_due
                                 })
@@ -502,148 +423,34 @@ def overview_page():
             
             if bill_dates:
                 bills_df = pd.DataFrame(bill_dates)
-                
-                # Categorize bills by due date
                 due_1_week = bills_df[bills_df['Days Until Due'] <= 7]
                 due_1_month = bills_df[bills_df['Days Until Due'] <= 30]
                 due_3_months = bills_df[bills_df['Days Until Due'] <= 90]
                 
-                # Display due date metrics
                 col1, col2, col3, col4 = st.columns(4)
+                with col1: st.metric("🚨 Due in 1 Week", len(due_1_week))
+                with col2: st.metric("⚠️ Due in 1 Month", len(due_1_month))
+                with col3: st.metric("📋 Due in 3 Months", len(due_3_months))
+                with col4: st.metric("📊 Total Upcoming Bills", len(bills_df))
                 
-                with col1:
-                    st.metric("🚨 Due in 1 Week", len(due_1_week))
-                    
-                with col2:
-                    st.metric("⚠️ Due in 1 Month", len(due_1_month))
-                    
-                with col3:
-                    st.metric("📋 Due in 3 Months", len(due_3_months))
-                    
-                with col4:
-                    st.metric("📊 Total Upcoming Bills", len(bills_df))
-                
-                # Show urgent bills (due in 1 week)
                 if len(due_1_week) > 0:
                     with st.expander(f"🚨 View Urgent Bills ({len(due_1_week)} bills due in 1 week)", expanded=False):
-                        urgent_bills = due_1_week.sort_values('Days Until Due')
-                        st.dataframe(urgent_bills, use_container_width=True)
+                        st.dataframe(due_1_week.sort_values('Days Until Due'), use_container_width=True)
                 
-                # Show upcoming bills (due in 1 month)
-                if len(due_1_month) > 0:
-                    with st.expander(f"⚠️ View Upcoming Bills ({len(due_1_month)} bills due in 1 month)", expanded=False):
-                        upcoming_bills = due_1_month.sort_values('Days Until Due')
-                        st.dataframe(upcoming_bills, use_container_width=True)
-                
-                # Bill due distribution chart
-                st.subheader("📊 Bill Due Distribution")
-                
-                # Create time buckets for visualization
                 bills_df['Due Category'] = bills_df['Days Until Due'].apply(
-                    lambda x: '1 Week' if x <= 7 else 
-                             '1 Month' if x <= 30 else 
-                             '3 Months' if x <= 90 else 
-                             'Later'
+                    lambda x: '1 Week' if x <= 7 else '1 Month' if x <= 30 else '3 Months' if x <= 90 else 'Later'
                 )
-                
                 due_distribution = bills_df['Due Category'].value_counts()
-                
-                # Display as bar chart
                 st.bar_chart(due_distribution)
-                
             else:
                 st.info("No upcoming bill dates found in the database.")
-                # Set metrics to 0 when no bills found
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("🚨 Due in 1 Week", 0)
-                with col2:
-                    st.metric("⚠️ Due in 1 Month", 0)
-                with col3:
-                    st.metric("📋 Due in 3 Months", 0)
-                with col4:
-                    st.metric("📊 Total Upcoming Bills", 0)
             
-                # Generate 48 months from Jan 2021
-                start_date = datetime(2021, 1, 1)
-                months = [start_date + pd.DateOffset(months=i) for i in range(48)]
-
-                # Generate more realistic mock data with growth and spikes
-                registrations = []
-                revenues = []
-                base_registrations = 20
-                base_revenue = 80000
-
-                for i in range(48):
-                    # Calculate growth with a stronger upward trend over time
-                    reg_growth = base_registrations * (1 + (i / 48) * 2.5)
-                    rev_growth = base_revenue * (1 + (i / 48) * 3.5)
-
-                    # Add seasonality/random spikes for realism
-                    if i % 12 in [2, 3, 9, 10]:  # Simulate busy seasons (e.g., Mar-Apr, Oct-Nov)
-                        reg_multiplier = random.uniform(1.3, 1.8)
-                        rev_multiplier = random.uniform(1.4, 2.0)
-                    else:
-                        reg_multiplier = random.uniform(0.85, 1.1)
-                        rev_multiplier = random.uniform(0.9, 1.2)
-
-                    current_registrations = int(reg_growth * reg_multiplier)
-                    current_revenue = int(rev_growth * rev_multiplier)
-
-                    # Ensure a minimum value to avoid unrealistic dips
-                    registrations.append(max(18, current_registrations))
-                    revenues.append(max(75000, current_revenue))
-
-                # Create DataFrame
-                trend_df = pd.DataFrame({
-                    "Month": months,
-                    "New Registrations": registrations,
-                    "Total Bill Amount": revenues
-                })
-
-                # Add time grouping columns
-                trend_df["Month_Year"] = trend_df["Month"].dt.to_period("M").astype(str)
-                trend_df["Quarter"] = trend_df["Month"].dt.to_period("Q").astype(str)
-                trend_df["Year"] = trend_df["Month"].dt.year.astype(str)
-
-                # Add toggle
-                st.subheader("📅 Monthly Trends")
-                granularity = st.radio("Select Time Granularity", ["Monthly", "Quarterly", "Yearly"], horizontal=True)
-
-                if granularity == "Monthly":
-                    plot_df = trend_df.copy()
-                    x_axis = "Month_Year"
-                elif granularity == "Quarterly":
-                    plot_df = trend_df.groupby("Quarter").agg({
-                        "New Registrations": "sum",
-                        "Total Bill Amount": "sum"
-                    }).reset_index()
-                    x_axis = "Quarter"
-                else:
-                    plot_df = trend_df.groupby("Year").agg({
-                        "New Registrations": "sum",
-                        "Total Bill Amount": "sum"
-                    }).reset_index()
-                    x_axis = "Year"
-
-                # Show charts
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader(f"📊 {granularity} Registrations")
-                    st.line_chart(data=plot_df, x=x_axis, y="New Registrations")
-
-                with col2:
-                    st.subheader(f"💰 {granularity} Revenue Trend")
-                    st.line_chart(data=plot_df, x=x_axis, y="Total Bill Amount")
-
             # Company-wise Analysis
             st.subheader("🏢 Company-wise Analysis")
-            
-            # Count records per company
-            company_counts = analytics_df.groupby('Company Name').agg({
+            company_counts = analytics_df.groupby('Issuer').agg({
                 'ISIN': 'count',
-                'Bill Amount': 'sum',
-                'ARN No': lambda x: (x.fillna('').str.strip() != '').sum()  # Count completed records
+                'Amount': 'sum',
+                'ARN': lambda x: (x.fillna('').str.strip() != '').sum()
             }).round(2)
             
             company_counts.columns = ['Total Records', 'Total Bill Amount', 'Completed Records']
@@ -653,56 +460,21 @@ def overview_page():
             with st.expander(f"📊 View Company-wise Analysis ({len(company_counts)} companies)", expanded=False):
                 st.dataframe(company_counts.sort_values('Total Records', ascending=False), use_container_width=True)
             
-            # Security Type Distribution
-            st.subheader("🏷️ Security Type Distribution")
-            security_distribution = analytics_df['Security Type'].value_counts()
-            
-            # Only show the bar chart (removed the top security types section)
-            st.bar_chart(security_distribution)
+            # Status Distribution
+            st.subheader("📊 Status Distribution")
+            status_distribution = analytics_df['Status'].value_counts()
+            st.bar_chart(status_distribution)
             
             # Financial Health Indicators
             st.subheader("💡 Financial Health Indicators")
-            
-            # Calculate key financial metrics
-            total_revenue = analytics_df['Bill Amount'].sum()
-            avg_bill_amount = analytics_df['Bill Amount'].mean()
-            high_value_clients = len(analytics_df[analytics_df['Bill Amount'] > avg_bill_amount * 2])
-            
-            # Revenue per security type
-            revenue_by_security = analytics_df.groupby('Security Type')['Bill Amount'].sum().sort_values(ascending=False)
+            avg_bill_amount = analytics_df['Amount'].mean()
+            high_value_clients = len(analytics_df[analytics_df['Amount'] > avg_bill_amount * 2])
             
             col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("💰 Average Bill Amount", f"₹{avg_bill_amount:,.2f}")
-            
-            with col2:
-                st.metric("🌟 High Value Clients", high_value_clients)
-            
-            with col3:
-                median_bill = analytics_df['Bill Amount'].median()
-                st.metric("📊 Median Bill Amount", f"₹{median_bill:,.2f}")
-            
-            with col4:
-                active_companies = len(analytics_df[analytics_df['Bill Amount'] > 0])
-                st.metric("🏢 Active Companies", active_companies)
-            
-            # Quick Action Items
-            st.subheader("🎯 Quick Action Items")
-            
-            action_items = []
-            
-            if len(incomplete_entries) > 0:
-                action_items.append(f"📝 Complete {len(incomplete_entries)} incomplete records")
-            
-            if len(due_1_week) > 0:
-                action_items.append(f"🚨 Follow up on {len(due_1_week)} urgent bills")
-            
-            if len(action_items) > 0:
-                for item in action_items:
-                    st.warning(item)
-            else:
-                st.success("🎉 All systems running smoothly!")
+            with col1: st.metric("💰 Average Bill Amount", f"₹{avg_bill_amount:,.2f}")
+            with col2: st.metric("🌟 High Value Clients", high_value_clients)
+            with col3: st.metric("📊 Median Bill Amount", f"₹{analytics_df['Amount'].median():,.2f}")
+            with col4: st.metric("🏢 Active Companies", len(analytics_df[analytics_df['Amount'] > 0]))
                 
         except Exception as e:
             st.error(f"Error displaying database: {str(e)}")
@@ -714,70 +486,124 @@ def overview_page():
 def database_page():
     st.title("Database")
     
-    with st.spinner("Loading database records..."):
-        records = airtable_read_records()
+    # Data is pre-loaded during login
+    records = airtable_read_records()
     
     if records:
         try:
             df = pd.DataFrame(records)
+            # Create a numeric 'Amount' column for calculations before formatting
+            df['NumericAmount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0.0)
+
+            # --- Main Database View ---
+            st.subheader("All Records")
             
-            # Ensure Bill Amount is properly formatted as numeric
-            df['Bill Amount'] = pd.to_numeric(df['Bill Amount'], errors='coerce').fillna(0.0)
-            
-            # Create a copy for analytics before formatting
-            analytics_df = df.copy()
-            
-            # Format Bill Amount for display
-            df['Bill Amount'] = df['Bill Amount'].apply(lambda x: f"₹{x:,.2f}" if x > 0 else "₹0.00")
-            
-            # ===== SEARCH SECTION =====
-            col1, col2 = st.columns([4, 1])
-            
-            with col1:
-                search_term = st.text_input("🔍 Search by Company Name, ISIN, ARN, or any field", placeholder="Enter search term...")
-            
-            # ===== APPLY SEARCH FILTER =====
-            filtered_df = df.copy()
-            
-            if search_term and (search_term):
-                # Search across multiple columns
-                search_columns = ['Company Name', 'ISIN', 'ARN No', 'Email ID', 'COMPANY SPOC', 'Security Type']
-                
-                # Create a mask for search across all specified columns
-                search_mask = pd.Series([False] * len(df))
-                
-                for col in search_columns:
-                    if col in df.columns:
-                        search_mask |= df[col].fillna('').str.contains(search_term, case=False, na=False)
-                
-                filtered_df = df[search_mask]
-            
-            # ===== DATABASE TABLE =====
-            st.dataframe(
-                filtered_df,
-                use_container_width=True,
-                height=600,
-                hide_index=True,
-                column_config={
-                    "BILL Date 2": None,
-                    "BILL Date 3": None,
-                    "BILL Date 4": None,
-                    "BILL Date 5": None,
-                    "BILL Date 6": None,
-                    "BILL Date 7": None
-                }
+            # 1. Create a list for the main filter dropdown
+            issuer_list = sorted(df['Issuer'].unique())
+            isin_list = sorted(df['ISIN'].unique())
+            search_options_top = ["— Select to Filter by Issuer or ISIN —"] + issuer_list + isin_list
+
+            search_selection_top = st.selectbox(
+                "🔍 **Filter Table**",
+                options=search_options_top
             )
-                    
+
+            # 2. Filter the DataFrame for the main table view
+            if search_selection_top != "— Select to Filter by Issuer or ISIN —":
+                filtered_df = df[
+                    (df['Issuer'] == search_selection_top) | 
+                    (df['ISIN'] == search_selection_top)
+                ].copy()
+            else:
+                filtered_df = df.copy()
+            
+            # Format 'Amount' for display in the main table
+            filtered_df['Amount'] = filtered_df['NumericAmount'].apply(lambda x: f"₹{x:,.2f}" if x > 0 else "₹0.00")
+            
+            # Configure columns to hide
+            column_config_main = { 'NumericAmount': None } # Hide the numeric amount column
+            for i in range(2, 73):
+                column_config_main[f"Bill Date {i}"] = None
+
+            st.dataframe(
+                filtered_df.drop(columns=['NumericAmount']),
+                use_container_width=True,
+                height=400,
+                hide_index=True,
+                column_config=column_config_main
+            )
+
+            # --- Company Performance Dashboard Section ---
+            st.divider()
+            st.header("Company Performance Dashboard")
+
+            # 1. Create a second dropdown for the performance section
+            search_options_bottom = ["— Search for a Company to see its Performance —"] + issuer_list
+            
+            selection_bottom = st.selectbox(
+                "🏢 **Select a Company**", 
+                options=search_options_bottom
+            )
+
+            # 2. If a company is selected, display its dashboard
+            if selection_bottom != "— Search for a Company to see its Performance —":
+                company_df = df[df['Issuer'] == selection_bottom].copy()
                 
+                # --- Calculate Metrics ---
+                total_billed_amount = company_df['NumericAmount'].sum()
+                total_records = len(company_df)
+                
+                all_dates = []
+                for i in range(1, 73):
+                    date_col = f'Bill Date {i}'
+                    # Coerce to datetime, invalid dates will become NaT
+                    valid_dates = pd.to_datetime(company_df[date_col], errors='coerce').dropna()
+                    all_dates.extend(valid_dates.tolist())
+                
+                all_dates = sorted(list(set(all_dates))) # Get unique sorted dates
+                
+                first_bill_date = all_dates[0] if all_dates else None
+                last_bill_date = all_dates[-1] if all_dates else None
+                
+                # Count upcoming bills
+                today = pd.Timestamp.now()
+                upcoming_bills_count = sum(1 for date in all_dates if date > today)
+
+
+                # --- Display Metrics ---
+                st.subheader("Performance Metrics")
+                metric_cols = st.columns(4)
+                metric_cols[0].metric("Total Billed Amount", f"₹{total_billed_amount:,.2f}")
+                metric_cols[1].metric("Total Records / ISINs", f"{total_records}")
+                metric_cols[2].metric("Upcoming Bills", f"{upcoming_bills_count}")
+                metric_cols[3].metric("First Bill Date", first_bill_date.strftime('%b %d, %Y') if first_bill_date else "N/A")
+                
+                # --- Display Bill Dates by Year ---
+                st.subheader("Billing History")
+
+                if all_dates:
+                    dates_by_year = {}
+                    for date in all_dates:
+                        year = date.year
+                        if year not in dates_by_year:
+                            dates_by_year[year] = []
+                        dates_by_year[year].append(date.strftime('%B %d, %Y'))
+                    
+                    for year in sorted(dates_by_year.keys(), reverse=True):
+                        with st.expander(f"🗓️ **{year}** ({len(dates_by_year[year])} bills)"):
+                            st.write(dates_by_year[year])
+                else:
+                    st.info("No billing dates found for this company.")
+
         except Exception as e:
-            st.error(f"Error displaying database: {str(e)}")
+            st.error(f"Error displaying database page: {str(e)}")
             st.info("Raw data preview:")
             st.json(records[:3] if len(records) > 0 else {})
     else:
         st.info("No records found in the database.")
 
+        
 def new_entry_page():
-    """Page for creating a new record."""
     st.title("Create a New Entry")
 
     with st.form("new_entry_form", clear_on_submit=True):
@@ -786,186 +612,207 @@ def new_entry_page():
         col1, col2 = st.columns(2)
         
         with col1:
-            company_name = st.text_input("Company Name *")
+            issuer = st.text_input("Issuer (Company Name) *")
             isin = st.text_input("ISIN *")
-            arn_no = st.text_input("ARN No")
-            security_type = st.text_input("Security Type")
+            arn = st.text_input("ARN if ISIN NA (NSDL)")
+            status = st.text_input("Status")
+            # FIX 1: Changed text_input to number_input for numeric data
+            no_of_isins = st.number_input("No of ISINs", min_value=0, step=1, value=None, placeholder="Enter a number...")
             company_referred_by = st.text_input("Company Referred By")
             email_id = st.text_input("Email ID")
-            company_spoc = st.text_input("COMPANY SPOC")
-            gstin = st.text_input("GSTIN")
-        
-        with col2:
-            address = st.text_area("ADDRESS")
-            bill_amount = st.number_input("Bill Amount", value=0.0, format="%.2f")
-            link = st.text_input("LINK")
-            company_path = st.text_input("Company Path")
             
-            # Date inputs
+        with col2:
+            gstin = st.text_input("GSTIN")
+            depository = st.text_input("Depository")
+            address = st.text_area("Address")
+            amount = st.number_input("Amount", value=0.0, format="%.2f")
+            company_link = st.text_input("Company Link")
             isin_allotment_date = st.date_input("ISIN Allotment Date", value=None)
-            bill_date_1 = st.date_input("BILL Date 1", value=None)
+            bill_date_1 = st.date_input("Bill Date 1", value=None)
 
         st.markdown("_* Fields are required_")
         submit_button = st.form_submit_button("Create New Entry", type="primary")
         
         if submit_button:
-            # Basic validation
-            if not company_name or not isin:
-                st.error("❌ Company Name and ISIN are required fields.")
+            if not issuer or not isin:
+                st.error("❌ Issuer and ISIN are required fields.")
             else:
                 try:
                     with st.spinner("Creating record in Airtable..."):
                         new_record_data = {
-                            "Company Name": company_name,
+                            "Issuer": issuer,
                             "ISIN": isin,
-                            "ARN No": arn_no,
-                            "Security Type": security_type,
-                            "Company reffered By": company_referred_by,
+                            "ARN if ISIN NA (NSDL)": arn,
+                            "Status": status,
+                            # FIX 2: Convert the value to an integer before sending
+                            "No of ISIN": int(no_of_isins) if no_of_isins is not None else None,
+                            "Depository": depository,
+                            "Company Referred By": company_referred_by,
                             "Email ID": email_id,
-                            "COMPANY SPOC": company_spoc,
                             "GSTIN": gstin,
-                            "ADDRESS": address,
-                            "Bill Amount": bill_amount,
-                            "LINK": link,
-                            "Company Path": company_path,
-                            "ISIN Allotment Date": isin_allotment_date.strftime("%Y-%m-%d") if isin_allotment_date else None,
-                            "BILL Date 1": bill_date_1.strftime("%Y-%m-%d") if bill_date_1 else None,
+                            "Address": address,
+                            "Amount": amount,
+                            "Company Link": company_link,
+                            "ISIN allotment date": isin_allotment_date.strftime("%Y-%m-%d") if isin_allotment_date else None,
+                            "Bill Date 1": bill_date_1.strftime("%Y-%m-%d") if bill_date_1 else None,
                         }
                         
                         table.create(new_record_data)
                         st.success("✅ New entry created successfully!")
-                        airtable_read_records.clear() # Clear cache to show new record
+                        airtable_read_records.clear()
                         
                 except Exception as e:
-                    st.error(f"❌ Failed to create new entry: {str(e)}")
-
+                    st.error(f"Failed to create new entry: {e}")
+        
 def edit_page():
-    st.title("Edit Company Record by ISIN")
+    st.title("Edit or Delete a Record")
 
-    with st.spinner("Loading records..."):
-        records = airtable_read_records()
-    
+    # Initialize session state to hold the selected record's data
+    if 'selected_record_to_edit' not in st.session_state:
+        st.session_state.selected_record_to_edit = None
+    if 'selected_record_id' not in st.session_state:
+        st.session_state.selected_record_id = None
+
+    # --- Data Loading and Search UI ---
+    records = airtable_read_records()
     if not records:
         st.error("No records found in the database.")
         return
-    
-    # Filter records with valid ISIN
-    valid_records = [rec for rec in records if rec.get("ISIN", "").strip()]
-    
-    if not valid_records:
-        st.error("No records with valid ISIN found.")
-        return
-    
-    isin_options = [rec["ISIN"] for rec in valid_records]
-    selected_isin = st.selectbox("Select ISIN to Edit", ["--- Select ---"] + isin_options)
 
-    if selected_isin != "--- Select ---":
-        record = next((r for r in valid_records if r["ISIN"] == selected_isin), None)
+    # Create a list of unique issuers and ISINs for the dropdown
+    df = pd.DataFrame(records)
+    issuer_list = sorted(df['Issuer'].unique())
+    isin_list = sorted(df['ISIN'].unique())
+    search_options = ["— Search by Issuer or ISIN to Edit/Delete —"] + issuer_list + isin_list
 
-        if record:
-            with st.form("edit_form"):
-                st.subheader(f"Editing Record for ISIN: `{selected_isin}`")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    arn_no = st.text_input("ARN No", value=record.get("ARN No", ""))
-                    company_name = st.text_input("Company Name", value=record.get("Company Name", ""))
-                    security_type = st.text_input("Security Type", value=record.get("Security Type", ""))
-                    company_referred_by = st.text_input("Company referred By", value=record.get("Company reffered By", ""))
-                    email_id = st.text_input("Email ID", value=record.get("Email ID", ""))
-                    company_spoc = st.text_input("COMPANY SPOC", value=record.get("COMPANY SPOC", ""))
-                    gstin = st.text_input("GSTIN", value=record.get("GSTIN", ""))
-                
-                with col2:
-                    address = st.text_area("ADDRESS", value=record.get("ADDRESS", ""))
-                    bill_amount = st.number_input("Bill Amount", value=safe_float(record.get("Bill Amount", 0)))
-                    link = st.text_input("LINK", value=record.get("LINK", ""))
-                    company_path = st.text_input("Company Path", value=record.get("Company Path", ""))
-                    
-                    # Parse stored date string to date object for default value
-                    try:
-                        bill_date_1_str = record.get("BILL Date 1", "")
-                        if bill_date_1_str:
-                            # Try different date formats
-                            for date_format in ["%Y-%m-%d", "%d-%b-%y", "%d-%B-%Y"]:
-                                try:
-                                    default_bill_date = datetime.strptime(bill_date_1_str, date_format).date()
-                                    break
-                                except ValueError:
-                                    continue
-                            else:
-                                default_bill_date = None
-                        else:
-                            default_bill_date = None
-                    except Exception:
-                        default_bill_date = None
+    # Use a dropdown for a fast search experience
+    search_selection = st.selectbox(
+        "🔍 **Find a record to edit or delete**",
+        options=search_options,
+        index=0 # Default to the placeholder
+    )
 
-                    bill_date_1 = st.date_input("BILL Date 1", value=default_bill_date, key="bill_date_1")
+    # --- Find and Display the Edit Form ---
+    if search_selection != "— Search by Issuer or ISIN to Edit/Delete —":
+        # Find the full record details from the original list
+        # We need the Airtable record ID which isn't in the DataFrame
+        raw_airtable_records = table.all()
+        
+        found_record = None
+        airtable_id = None
 
-                submit = st.form_submit_button("✅ Update Record")
+        for rec in raw_airtable_records:
+            fields = rec.get("fields", {})
+            if fields.get("Issuer") == search_selection or fields.get("ISIN") == search_selection:
+                found_record = fields
+                airtable_id = rec.get("id")
+                break
+        
+        if found_record:
+            st.session_state.selected_record_to_edit = found_record
+            st.session_state.selected_record_id = airtable_id
+        else:
+            st.warning("Record not found.")
+            st.session_state.selected_record_to_edit = None
+
+
+    # If a record has been selected and is in session state, show the form
+    if st.session_state.selected_record_to_edit:
+        record = st.session_state.selected_record_to_edit
+        st.markdown("---")
+        st.subheader(f"Editing Record for: `{record.get('Issuer', 'N/A')}`")
+
+        with st.form("edit_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                issuer = st.text_input("Issuer", value=record.get("Issuer", ""))
+                arn = st.text_input("ARN if ISIN NA (NSDL)", value=record.get("ARN if ISIN NA (NSDL)", ""))
+                status = st.text_input("Status", value=record.get("Status", ""))
+                company_referred_by = st.text_input("Company Referred By", value=record.get("Company Referred By", ""))
+                email_id = st.text_input("Email ID", value=record.get("Email ID", ""))
+                no_of_isins = st.number_input("No of ISINs", min_value=0, step=1, value=record.get("No of ISIN", 0))
+
+            with col2:
+                gstin = st.text_input("GSTIN", value=record.get("GSTIN", ""))
+                address = st.text_area("Address", value=record.get("Address", ""))
+                amount = st.number_input("Amount", value=safe_float(record.get("Amount", 0)))
+                company_link = st.text_input("Company Link", value=record.get("Company Link", ""))
                 
-                if submit:
-                    try:
-                        # Find the Airtable record ID
-                        airtable_records = table.all(formula=f"{{ISIN}}='{selected_isin}'")
-                        if airtable_records:
-                            airtable_id = airtable_records[0]["id"]
-                            bill_date_str = bill_date_1.strftime("%Y-%m-%d") if bill_date_1 else ""
-                            
-                            updated_data = {
-                                "ARN No": arn_no,
-                                "Company Name": company_name,
-                                "Security Type": security_type,
-                                "Company reffered By": company_referred_by,
-                                "Email ID": email_id,
-                                "COMPANY SPOC": company_spoc,
-                                "GSTIN": gstin,
-                                "ADDRESS": address,
-                                "Bill Amount": bill_amount,
-                                "LINK": link,
-                                "Company Path": company_path,
-                                "BILL Date 1": bill_date_str,
-                            }
-                            
-                            table.update(airtable_id, updated_data)
-                            st.success("✅ Record updated successfully!")
-                            airtable_read_records.clear() # Clear cache to show updated data
-                            
-                        else:
-                            st.error("❌ Failed to locate Airtable record by ISIN.")
-                            
-                    except Exception as e:
-                        st.error(f"❌ Error updating record: {str(e)}")
+                try:
+                    date_str = record.get("ISIN allotment date", "")
+                    default_date = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else None
+                except (ValueError, TypeError):
+                    default_date = None
+                isin_allotment_date = st.date_input("ISIN Allotment Date", value=default_date)
+
+            # --- Form Buttons ---
+            button_col1, button_col2 = st.columns(2)
+            with button_col1:
+                update_submitted = st.form_submit_button("✅ Update Record", use_container_width=True)
+            with button_col2:
+                delete_submitted = st.form_submit_button("❌ Delete Record", type="primary", use_container_width=True)
+
+            # --- Update Logic ---
+            if update_submitted:
+                try:
+                    updated_data = {
+                        "Issuer": issuer,
+                        "ARN if ISIN NA (NSDL)": arn,
+                        "Status": status,
+                        "Company Referred By": company_referred_by,
+                        "Email ID": email_id,
+                        "GSTIN": gstin,
+                        "Address": address,
+                        "Amount": amount,
+                        "Company Link": company_link,
+                        "No of ISIN": int(no_of_isins),
+                        "ISIN allotment date": isin_allotment_date.strftime("%Y-%m-%d") if isin_allotment_date else None,
+                    }
+                    table.update(st.session_state.selected_record_id, updated_data)
+                    st.success("✅ Record updated successfully!")
+                    airtable_read_records.clear()
+                    st.session_state.selected_record_to_edit = None # Clear selection
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error updating record: {e}")
+
+            # --- Delete Logic ---
+            if delete_submitted:
+                try:
+                    table.delete(st.session_state.selected_record_id)
+                    st.success("❌ Record deleted successfully!")
+                    airtable_read_records.clear()
+                    st.session_state.selected_record_to_edit = None # Clear selection
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error deleting record: {e}")
+
 
 # -------- MAIN APP -------- #
-# Check authentication first
 if not check_authentication():
     st.stop()
 
-# Professional sidebar navigation using streamlit-option-menu
 with st.sidebar:
     st.markdown("<h1 style='text-align: center; color: #0d6efd;'>Reminder App</h1>", unsafe_allow_html=True)
     
-    # List of pages and their icons
     pages = ["Overview", "Database", "New Record", "Edit Record", "Logout"]
     icons = ["speedometer2", "table", "plus-square-dotted", "pencil-square", "box-arrow-right"]
 
-    # Get the index of the current page, default to 0 if not found
     try:
         default_index = pages.index(st.session_state.page)
     except (ValueError, AttributeError):
         default_index = 0
         st.session_state.page = pages[default_index]
 
-    # Create the option menu
     selected_page = option_menu(
         menu_title=None,
         options=pages,
         icons=icons,
         menu_icon="cast",
         default_index=default_index,
-        # FIX 2: Updated styles for dark mode visibility and mobile padding
         styles={
             "container": {"padding": "15px 5px !important", "background-color": "transparent"},
             "icon": {"color": "#6c757d", "font-size": "20px"},
@@ -974,21 +821,18 @@ with st.sidebar:
                 "text-align": "left",
                 "margin": "0px",
                 "padding": "10px",
-                "color": "#6c757d",  # Set text color for visibility in dark mode
-                "--hover-color": "#e9ecef", # Hover color works in light/dark
+                "color": "#6c757d",
+                "--hover-color": "#e9ecef",
                 "border-radius": "5px",
             },
             "nav-link-selected": {"background-color": "#0d6efd", "color": "white"},
         },
     )
 
-    # Handle page selection
     if selected_page != st.session_state.page:
         st.session_state.page = selected_page
         st.rerun()
 
-
-# Display selected page or handle logout
 if st.session_state.page == "Logout":
     logout()
 elif st.session_state.page == "Overview":
